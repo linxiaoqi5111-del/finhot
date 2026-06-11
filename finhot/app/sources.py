@@ -137,12 +137,51 @@ def fetch_gelonghui(limit=100):
     return out
 
 
+def fetch_cls(pages=3, rn=30):
+    """财联社 电报（接口需签名：sign = md5(sha1(按键排序的查询串))）"""
+    out = []
+    last_time = int(time.time())
+    for _ in range(pages):
+        params = {
+            "app": "CailianpressWeb",
+            "category": "",
+            "last_time": str(last_time),
+            "os": "web",
+            "refresh_type": "1",
+            "rn": str(rn),
+            "sv": "8.4.6",
+        }
+        s = "&".join(f"{k}={params[k]}" for k in sorted(params))
+        params["sign"] = hashlib.md5(hashlib.sha1(s.encode()).hexdigest().encode()).hexdigest()
+        r = _get(
+            "https://www.cls.cn/v1/roll/get_roll_list",
+            params=params,
+            headers={"Referer": "https://www.cls.cn/telegraph"},
+        )
+        rows = (r.json().get("data") or {}).get("roll_data", [])
+        if not rows:
+            break
+        for it in rows:
+            ts = int(it.get("ctime") or time.time())
+            out.append({
+                "id": _mkid("cls", it["id"]),
+                "source": "财联社",
+                "title": _strip_html(it.get("title", "")),
+                "content": _strip_html(it.get("content", "")),
+                "url": f"https://www.cls.cn/detail/{it['id']}",
+                "ts": ts,
+            })
+            last_time = min(last_time, ts)
+    return out
+
+
 SOURCES = {
     "sina": fetch_sina,
     "eastmoney": fetch_eastmoney,
     "wallstreetcn": fetch_wallstreetcn,
     "10jqka": fetch_10jqka,
     "gelonghui": fetch_gelonghui,
+    "cls": fetch_cls,
 }
 
 
