@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinHot · 金融热词雷达</title>
+<style>
+:root {
+  --bg: #060814; --panel: #0d1124; --panel2: #11162e; --border: #1d2442;
+  --text: #dbe2f4; --muted: #7c87ab; --accent: #38bdf8; --hot: #f97316;
+  --green: #34d399; --red: #f87171; --gold: #fbbf24;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+header { padding: 22px 28px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+header h1 { font-size: 22px; letter-spacing: 1px; }
+header h1 .fin { color: var(--accent); } header h1 .hot { color: var(--hot); }
+header .sub { color: var(--muted); font-size: 13px; }
+.toolbar { padding: 14px 28px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+.toolbar select, .toolbar button {
+  background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer;
+}
+.layout { display: flex; gap: 20px; padding: 0 28px 40px; align-items: flex-start; }
+.board { flex: 1.2; min-width: 0; }
+.detail { flex: 1; min-width: 0; position: sticky; top: 16px; }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.card h2 { font-size: 15px; padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 11px 18px; border-bottom: 1px solid var(--border); cursor: pointer; transition: background .15s; }
+.row:hover, .row.active { background: var(--panel2); }
+.row:last-child { border-bottom: none; }
+.rank { width: 26px; text-align: center; font-weight: 700; color: var(--muted); font-size: 13px; }
+.rank.top { color: var(--hot); }
+.term { font-weight: 600; font-size: 15px; flex-shrink: 0; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.badge { font-size: 11px; padding: 1px 7px; border-radius: 99px; flex-shrink: 0; }
+.badge.new { background: rgba(251,191,36,.15); color: var(--gold); border: 1px solid rgba(251,191,36,.35); }
+.spark { flex: 1; min-width: 60px; height: 26px; }
+.metrics { display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-shrink: 0; text-align: right; }
+.metrics b { color: var(--text); font-size: 14px; display: block; }
+.metrics .lift-up b { color: var(--red); }
+.metrics .score b { color: var(--accent); }
+.detail .placeholder { padding: 40px 20px; text-align: center; color: var(--muted); }
+.detail-head { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.detail-head .t { font-size: 20px; font-weight: 700; }
+.detail-head .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+.chart-wrap { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.news-item { padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.news-item:last-child { border-bottom: none; }
+.news-item .src { color: var(--accent); font-size: 12px; margin-right: 8px; }
+.news-item .time { color: var(--muted); font-size: 12px; }
+.news-item .txt { margin-top: 4px; font-size: 13px; color: var(--text); }
+.news-item .txt a { color: inherit; text-decoration: none; }
+.news-item .txt a:hover { color: var(--accent); }
+mark { background: rgba(249,115,22,.25); color: var(--hot); border-radius: 3px; padding: 0 2px; }
+.footer { padding: 16px 28px 30px; color: var(--muted); font-size: 12px; }
+@media (max-width: 900px) { .layout { flex-direction: column; } .detail { position: static; width: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="fin">Fin</span><span class="hot">HOT</span> 金融热词雷达</h1>
+  <span class="sub">监控财经快讯中突然爆发的热词 · 数据源：新浪7x24 / 东方财富 / 华尔街见闻 / 同花顺 / 格隆汇</span>
+</header>
+<div class="toolbar">
+  <label>日期 <select id="daySel"></select></label>
+  <label>基线窗口 <select id="baseSel">
+    <option value="3">3天</option><option value="7" selected>7天</option><option value="14">14天</option>
+  </select></label>
+  <button id="refreshBtn">刷新</button>
+  <span id="statLine"></span>
+</div>
+<div class="layout">
+  <div class="board card">
+    <h2>🔥 突发热词榜 <span style="color:var(--muted);font-weight:400;font-size:12px">按突发度排序 · 点击查看详情</span></h2>
+    <div id="list"></div>
+  </div>
+  <div class="detail card" id="detail">
+    <div class="placeholder">点击左侧热词查看趋势与相关快讯</div>
+  </div>
+</div>
+<div class="footer">FinHot · 热度 = 当日提及该词的快讯条数；突发度 = 相对过去N天基线的提升倍数；NEW = 基线窗口内从未出现的新词。</div>
+<script>
+const $ = s => document.querySelector(s);
+let state = { day: '', baseline: 7, active: null };
+
+function spark(trend, w = 120, h = 26, color = '#38bdf8') {
+  const max = Math.max(...trend, 1);
+  const step = w / Math.max(trend.length - 1, 1);
+  const pts = trend.map((v, i) => `${(i * step).toFixed(1)},${(h - 2 - (v / max) * (h - 6)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+    <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.6"/>
+    <circle cx="${((trend.length - 1) * step).toFixed(1)}" cy="${(h - 2 - (trend[trend.length - 1] / max) * (h - 6)).toFixed(1)}" r="2.4" fill="#f97316"/>
+  </svg>`;
+}
+
+function bigChart(history) {
+  const w = 460, h = 140, pad = 26;
+  if (!history.length) return '<div style="color:var(--muted)">暂无历史数据</div>';
+  const max = Math.max(...history.map(d => d.doc_count), 1);
+  const step = (w - pad * 2) / Math.max(history.length - 1, 1);
+  const y = v => h - 22 - (v / max) * (h - 44);
+  const pts = history.map((d, i) => `${(pad + i * step).toFixed(1)},${y(d.doc_count).toFixed(1)}`).join(' ');
+  const labels = history.map((d, i) =>
+    (history.length <= 10 || i % Math.ceil(history.length / 8) === 0 || i === history.length - 1)
+      ? `<text x="${(pad + i * step).toFixed(1)}" y="${h - 6}" font-size="9" fill="#7c87ab" text-anchor="middle">${d.day.slice(5)}</text>` : '').join('');
+  const dots = history.map((d, i) =>
+    `<circle cx="${(pad + i * step).toFixed(1)}" cy="${y(d.doc_count).toFixed(1)}" r="3" fill="#38bdf8"><title>${d.day}: ${d.doc_count}条</title></circle>`).join('');
+  return `<svg viewBox="0 0 ${w} ${h}" style="width:100%">
+    <text x="4" y="${y(max) + 4}" font-size="9" fill="#7c87ab">${max}</text>
+    <polyline points="${pts}" fill="none" stroke="#38bdf8" stroke-width="2"/>${dots}${labels}</svg>`;
+}
+
+async function loadBoard() {
+  const q = new URLSearchParams({ baseline: state.baseline, limit: 60 });
+  if (state.day) q.set('day', state.day);
+  const data = await (await fetch('/api/hotwords?' + q)).json();
+  state.day = data.day;
+  $('#statLine').textContent = `${data.day} · 当日快讯 ${data.total_items} 条 · 候选热词 ${data.hotwords.length}+`;
+  $('#list').innerHTML = data.hotwords.map((w, i) => `
+    <div class="row" data-term="${encodeURIComponent(w.term)}">
+      <div class="rank ${i < 3 ? 'top' : ''}">${i + 1}</div>
+      <div class="term">${w.term}</div>
+      ${w.is_new ? '<span class="badge new">NEW</span>' : ''}
+      ${spark(w.trend)}
+      <div class="metrics">
+        <div class="today"><b>${w.today}</b>今日条数</div>
+        <div class="${w.lift > 2 ? 'lift-up' : ''}"><b>×${w.lift}</b>突发倍数</div>
+        <div class="score"><b>${w.score}</b>热度分</div>
+      </div>
+    </div>`).join('') || '<div class="placeholder">暂无数据，请先运行采集器</div>';
+  document.querySelectorAll('.row').forEach(r => r.onclick = () => showDetail(decodeURIComponent(r.dataset.term), r));
+}
+
+async function showDetail(term, rowEl) {
+  document.querySelectorAll('.row.active').forEach(r => r.classList.remove('active'));
+  if (rowEl) rowEl.classList.add('active');
+  const d = await (await fetch(`/api/term/${encodeURIComponent(term)}?day=${state.day}`)).json();
+  const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const hl = s => esc(s).replaceAll(esc(term), `<mark>${esc(term)}</mark>`);
+  $('#detail').innerHTML = `
+    <div class="detail-head"><div class="t">${esc(term)}</div>
+      <div class="meta">${d.day} · 相关快讯 ${d.items.length} 条 · 历史覆盖 ${d.history.length} 天</div></div>
+    <div class="chart-wrap">${bigChart(d.history)}</div>
+    <div>${d.items.map(it => `
+      <div class="news-item">
+        <span class="src">${it.source}</span>
+        <span class="time">${new Date(it.ts * 1000).toLocaleString('zh-CN')}</span>
+        <div class="txt"><a href="${it.url}" target="_blank" rel="noopener">${it.title ? `<b>${hl(it.title)}</b> ` : ''}${hl(it.content || '')}</a></div>
+      </div>`).join('')}</div>`;
+}
+
+async function initDays() {
+  const stats = await (await fetch('/api/stats')).json();
+  $('#daySel').innerHTML = stats.by_day.map(d => `<option value="${d.day}">${d.day}（${d.count}条）</option>`).join('');
+}
+
+$('#daySel').onchange = e => { state.day = e.target.value; loadBoard(); };
+$('#baseSel').onchange = e => { state.baseline = +e.target.value; loadBoard(); };
+$('#refreshBtn').onclick = () => loadBoard();
+initDays().then(loadBoard);
+</script>
+</body>
+</html>
