@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
+from .events import source_tier
 from .terms import burst_score
 
 app = FastAPI(title="FinHot 金融热词监控")
@@ -35,28 +36,33 @@ def hotwords(
         row = conn.execute("SELECT MAX(day) AS d FROM term_daily").fetchone()
         day = row["d"] or datetime.date.today().isoformat()
     base_days = _days_back(day, baseline)
-    today_rows = conn.execute("SELECT term, doc_count, spec_count FROM term_daily WHERE day=?", (day,)).fetchall()
+    today_rows = conn.execute("SELECT term, doc_count, spec_count, weight FROM term_daily WHERE day=?", (day,)).fetchall()
     placeholders = ",".join("?" * len(base_days))
-    hist = {}
+    hist, hist_w = {}, {}
     for r in conn.execute(
-        f"SELECT term, day, doc_count FROM term_daily WHERE day IN ({placeholders})", base_days
+        f"SELECT term, day, doc_count, weight FROM term_daily WHERE day IN ({placeholders})", base_days
     ):
         hist.setdefault(r["term"], {})[r["day"]] = r["doc_count"]
+        hist_w.setdefault(r["term"], {})[r["day"]] = r["weight"]
 
     results = []
     for r in today_rows:
         term, today_count, spec_count = r["term"], r["doc_count"], r["spec_count"]
+        today_w = r["weight"] or today_count  # 旧数据 weight=0 时退回事件数
         spec_ratio = spec_count / today_count if today_count else 0.0
         if gate and spec_ratio < min_spec_ratio:
             continue
         h = hist.get(term, {})
+        hw = hist_w.get(term, {})
         baseline_avg = sum(h.values()) / len(base_days)
-        score, lift = burst_score(today_count, baseline_avg)
+        baseline_w = sum(hw[d] or h[d] for d in hw) / len(base_days)
+        score, lift = burst_score(today_w, baseline_w)
         if gate:
             score = round(score * spec_ratio, 2)
         results.append({
             "term": term,
             "today": today_count,
+            "weight": round(today_w, 2),
             "spec_count": spec_count,
             "spec_ratio": round(spec_ratio, 2),
             "baseline_avg": round(baseline_avg, 2),
@@ -84,15 +90,26 @@ def term_detail(term: str, day: str = "", limit: int = Query(30, ge=1, le=100)):
             "SELECT day, doc_count FROM term_daily WHERE term=? ORDER BY day", (term,)
         )
     ]
-    items = [
+    rows = [
         dict(r)
         for r in conn.execute(
-            "SELECT source, title, content, url, ts FROM items "
+            "SELECT source, title, content, url, ts, event_id FROM items "
             "WHERE day=? AND (title LIKE ? OR content LIKE ?) ORDER BY ts DESC LIMIT ?",
             (day, f"%{term}%", f"%{term}%", limit),
         )
     ]
     conn.close()
+    # 同一事件只展示一条主条（信源最权威的），其余折叠进 related
+    groups = {}
+    for it in rows:
+        groups.setdefault(it["event_id"] or it["url"] or id(it), []).append(it)
+    items = []
+    for grp in groups.values():
+        grp.sort(key=lambda x: (source_tier(x["source"]), -x["ts"]))
+        main = grp[0]
+        main["related"] = [{"source": g["source"], "url": g["url"], "ts": g["ts"]} for g in grp[1:]]
+        items.append(main)
+    items.sort(key=lambda x: x["ts"], reverse=True)
     return {"term": term, "day": day, "history": history, "items": items}
 
 

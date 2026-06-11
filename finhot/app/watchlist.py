@@ -5,7 +5,8 @@
 接入说明：
 - 微博：m.weibo.cn 容器 API（uid -> containerid=107603{uid}）需游客 cookie；失效时自动走 genvisitor2
   接口重新生成并保存，也可手动指定（环境变量 WEIBO_COOKIE 或 finhot/data/weibo_cookie.txt，已 gitignore）
-- 雪球：需要先访问主页拿 cookie（有 WAF，失败时自动跳过该博主）
+- 雪球：匿名通路先访问 /about 拿 xq_a_token；遇阿里云 WAF 滑块验证（数据中心 IP 常见）时报错跳过，
+  可用环境变量 XUEQIU_COOKIE 或 finhot/data/xueqiu_cookie.txt 填入自己浏览器里的 cookie
 - 公众号：无公开 API，走 Wechat2RSS 公益库（wechat2rss.xlab.app，填公众号名自动查覆盖）；不在库里的
   可填 RSS 直链（自建 Wechat2RSS/RSSHub 的 feed 地址）
 - rss：通用 RSS 源（媒体官网 feed 等），填 {"name": 源名, "url": feed 地址}
@@ -24,6 +25,7 @@ from .sources import UA, TIMEOUT, _mkid, _strip_html
 
 WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "..", "watchlist.json")
 WEIBO_COOKIE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "weibo_cookie.txt")
+XUEQIU_COOKIE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "xueqiu_cookie.txt")
 WEIBO_SLEEP = float(os.environ.get("WEIBO_SLEEP", "8"))  # 单号间隔秒数，防频控
 
 
@@ -116,15 +118,33 @@ def fetch_weibo_user(uid):
     return out
 
 
+def _xueqiu_cookie():
+    ck = os.environ.get("XUEQIU_COOKIE", "").strip()
+    if not ck:
+        try:
+            with open(XUEQIU_COOKIE_PATH, encoding="utf-8") as f:
+                ck = f.read().strip()
+        except FileNotFoundError:
+            ck = ""
+    return ck
+
+
 def fetch_xueqiu_user(user_id):
     s = requests.Session()
     s.headers["User-Agent"] = UA
-    s.get("https://xueqiu.com/", timeout=TIMEOUT)
+    ck = _xueqiu_cookie()
+    if ck:
+        s.headers["Cookie"] = ck
+    else:
+        s.get("https://xueqiu.com/about", timeout=TIMEOUT)  # 领 xq_a_token 匿名令牌
     r = s.get(
         "https://xueqiu.com/v4/statuses/user_timeline.json",
         params={"user_id": user_id, "page": 1, "count": 20},
+        headers={"Referer": f"https://xueqiu.com/u/{user_id}"},
         timeout=TIMEOUT,
     )
+    if b"aliyun_waf" in r.content[:1000] or b"renderData" in r.content[:200]:
+        raise RuntimeError("雪球 WAF 滑块拦截（机房 IP 常见），可配置 XUEQIU_COOKIE 或 data/xueqiu_cookie.txt")
     out = []
     for st in r.json().get("statuses", []):
         out.append({

@@ -45,13 +45,24 @@
     "1862172703",
     "5334569296"
   ],
-  "xueqiu": [],
+  "xueqiu": [
+    "1955602780",
+    "1247347556",
+    "6056806984",
+    "3081204011"
+  ],
   "wechat": [
     "机器之心",
     "量子位",
     "新智元",
     "极客公园",
-    "夕小瑶科技说"
+    "夕小瑶科技说",
+    "猫笔刀",
+    "思想钢印",
+    "集思录",
+    "长赢指数投资",
+    "42章经",
+    "逻辑与现实经济"
   ],
   "x": [],
   "rss": [
@@ -61,6 +72,7 @@
     {"name": "虎嗅", "url": "https://feedx.net/rss/huxiu.xml"},
     {"name": "少数派", "url": "https://sspai.com/feed"},
     {"name": "InfoQ", "url": "https://www.infoq.cn/feed"},
-    {"name": "爱范儿", "url": "https://www.ifanr.com/feed"}
+    {"name": "爱范儿", "url": "https://www.ifanr.com/feed"},
+    {"name": "联合早报财经", "url": "https://rsshub.rssforever.com/zaobao/realtime/finance"}
   ]
 }

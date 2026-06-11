@@ -149,6 +149,7 @@ async function showDetail(term, rowEl) {
       <div class="news-item">
         <span class="src">${it.source}</span>
         <span class="time">${new Date(it.ts * 1000).toLocaleString('zh-CN')}</span>
+        ${(it.related && it.related.length) ? `<span class="src" title="${it.related.map(r => r.source).join('、')}">+${it.related.length} 同事件</span>` : ''}
         <div class="txt"><a href="${it.url}" target="_blank" rel="noopener">${it.title ? `<b>${hl(it.title)}</b> ` : ''}${hl(it.content || '')}</a></div>
       </div>`).join('')}</div>`;
 }
