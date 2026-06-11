@@ -6,7 +6,9 @@
 - 微博：m.weibo.cn 容器 API（uid -> containerid=107603{uid}）需游客 cookie；失效时自动走 genvisitor2
   接口重新生成并保存，也可手动指定（环境变量 WEIBO_COOKIE 或 finhot/data/weibo_cookie.txt，已 gitignore）
 - 雪球：需要先访问主页拿 cookie（有 WAF，失败时自动跳过该博主）
-- 公众号：无公开 API，通过搜狗微信搜索抓最新文章，频控严格，仅尽力而为
+- 公众号：无公开 API，走 Wechat2RSS 公益库（wechat2rss.xlab.app，填公众号名自动查覆盖）；不在库里的
+  可填 RSS 直链（自建 Wechat2RSS/RSSHub 的 feed 地址）
+- rss：通用 RSS 源（媒体官网 feed 等），填 {"name": 源名, "url": feed 地址}
 - X(Twitter)：经 Nitter/RSSHub 免费通路抓 RSS，多实例自动切换，公共实例不稳定时跳过
 """
 import email.utils
@@ -67,9 +69,9 @@ def load_watchlist():
     try:
         with open(WATCHLIST_PATH, encoding="utf-8") as f:
             data = json.load(f)
-        return {k: data.get(k, []) for k in ("weibo", "xueqiu", "wechat", "x")}
+        return {k: data.get(k, []) for k in ("weibo", "xueqiu", "wechat", "x", "rss")}
     except FileNotFoundError:
-        return {"weibo": [], "xueqiu": [], "wechat": [], "x": []}
+        return {"weibo": [], "xueqiu": [], "wechat": [], "x": [], "rss": []}
 
 
 def _weibo_api(uid, cookie):
@@ -136,9 +138,64 @@ def fetch_xueqiu_user(user_id):
     return out
 
 
+def _parse_pubdate(pub):
+    """兼容 RFC822 和 '2026-06-11 19:00:00 +0800' 等变体。"""
+    if not pub:
+        return int(time.time())
+    try:
+        return int(email.utils.parsedate_to_datetime(pub).timestamp())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        return int(time.mktime(time.strptime(" ".join(pub.split()), "%Y-%m-%d %H:%M:%S %z")))
+    except Exception:  # noqa: BLE001
+        return int(time.time())
+
+
+def fetch_rss(url, source_name):
+    """通用 RSS 抓取，返回统一格式条目。"""
+    r = requests.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT)
+    if r.status_code != 200 or (b"<rss" not in r.content[:500] and b"<feed" not in r.content[:500] and b"<?xml" not in r.content[:200]):
+        raise RuntimeError(f"{url} -> HTTP {r.status_code} 非 RSS")
+    root = ET.fromstring(r.content)
+    out = []
+    for it in root.iter("item"):
+        link = (it.findtext("link") or "").strip()
+        ts = _parse_pubdate(it.findtext("pubDate"))
+        out.append({
+            "id": _mkid("rss", link or it.findtext("guid") or it.findtext("title") or ""),
+            "source": source_name,
+            "title": _strip_html(it.findtext("title") or ""),
+            "content": _strip_html(it.findtext("description") or "")[:2000],
+            "url": link,
+            "ts": ts,
+        })
+    return out
+
+
+_w2r_map = {"value": None}
+
+
+def _wechat2rss_map():
+    """Wechat2RSS 公益库的 公众号名 -> feed 地址 映射（运行期拉取并缓存）。"""
+    if _w2r_map["value"] is not None:
+        return _w2r_map["value"]
+    r = requests.get("https://wechat2rss.xlab.app/list/all.html", headers={"User-Agent": UA}, timeout=TIMEOUT)
+    mapping = {}
+    for url, name in re.findall(r'href="(https://wechat2rss\.xlab\.app/feed/[a-f0-9]+\.xml)"[^>]*>([^<]+)</a>', r.text):
+        mapping[name.strip()] = url
+    _w2r_map["value"] = mapping
+    return mapping
+
+
 def fetch_wechat_account(name):
-    # 公众号无公开 API；搜狗微信搜索频控严格，预留接口，建议接入 RSSHub 等代理后启用
-    raise NotImplementedError("公众号抓取需配置代理渠道（如 RSSHub: /wechat/...）")
+    if name.startswith("http"):
+        return fetch_rss(name, f"公众号@{name.rsplit('/', 1)[-1]}")
+    url = _wechat2rss_map().get(name)
+    if not url:
+        raise RuntimeError(f"Wechat2RSS 公益库未收录「{name}」，可改填自建 feed 直链")
+    items = fetch_rss(url, f"公众号@{name}")
+    return items
 
 
 # 公共 Nitter 实例经常失效，按顺序尝试；RSSHub 公共实例作兜底
@@ -219,4 +276,10 @@ def fetch_watchlist():
             items.extend(fetch_x_user(user))
         except Exception as e:  # noqa: BLE001
             errors[f"x:{user}"] = str(e)
+    for entry in wl.get("rss", []):
+        name, url = entry.get("name", entry.get("url", "")), entry.get("url", "")
+        try:
+            items.extend(fetch_rss(url, name))
+        except Exception as e:  # noqa: BLE001
+            errors[f"rss:{name}"] = str(e)
     return items, errors

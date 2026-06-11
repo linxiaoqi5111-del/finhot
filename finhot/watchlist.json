@@ -1,5 +1,5 @@
 {
-  "_说明": "博主监控列表。填入要监控的博主后，采集器会自动抓取他们的内容并进入同一套热词分析。weibo 填博主 uid（数字），xueqiu 填用户 id（数字），wechat 填公众号名称，x 填用户名（如 elonmusk，不带@）。",
+  "_说明": "博主监控列表。填入要监控的博主后，采集器会自动抓取他们的内容并进入同一套热词分析。weibo 填博主 uid（数字），xueqiu 填用户 id（数字），wechat 填公众号名称（走 Wechat2RSS 公益库，不在库里可填 feed 直链），x 填用户名（如 elonmusk，不带@），rss 填通用 RSS 源 {name, url}。",
   "weibo": [
     "2014433131",
     "5828706619",
@@ -46,6 +46,15 @@
     "5334569296"
   ],
   "xueqiu": [],
-  "wechat": [],
-  "x": []
+  "wechat": [
+    "机器之心",
+    "量子位",
+    "新智元"
+  ],
+  "x": [],
+  "rss": [
+    {"name": "36氪", "url": "https://36kr.com/feed"},
+    {"name": "钛媒体", "url": "https://www.tmtpost.com/feed"},
+    {"name": "雷峰网", "url": "https://www.leiphone.com/feed"}
+  ]
 }
