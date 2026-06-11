@@ -3,7 +3,8 @@
 列表为空时整体跳过。条目格式与 sources.py 一致，统一进入热词分析。
 
 接入说明：
-- 微博：m.weibo.cn 的容器 API 免登录可用，但有频控；uid -> containerid=107603{uid}
+- 微博：m.weibo.cn 容器 API（uid -> containerid=107603{uid}），现需游客 cookie：用浏览器无痕模式打开
+  m.weibo.cn 后复制 Cookie，存入环境变量 WEIBO_COOKIE 或 finhot/data/weibo_cookie.txt（已 gitignore）
 - 雪球：需要先访问主页拿 cookie（有 WAF，失败时自动跳过该博主）
 - 公众号：无公开 API，通过搜狗微信搜索抓最新文章，频控严格，仅尽力而为
 - X(Twitter)：经 Nitter/RSSHub 免费通路抓 RSS，多实例自动切换，公共实例不稳定时跳过
@@ -19,6 +20,18 @@ import requests
 from .sources import UA, TIMEOUT, _mkid, _strip_html
 
 WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "..", "watchlist.json")
+WEIBO_COOKIE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "weibo_cookie.txt")
+
+
+def _weibo_cookie():
+    ck = os.environ.get("WEIBO_COOKIE", "").strip()
+    if ck:
+        return ck
+    try:
+        with open(WEIBO_COOKIE_PATH, encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ""
 
 
 def load_watchlist():
@@ -34,11 +47,14 @@ def fetch_weibo_user(uid):
     r = requests.get(
         "https://m.weibo.cn/api/container/getIndex",
         params={"type": "uid", "value": uid, "containerid": f"107603{uid}"},
-        headers={"User-Agent": UA, "Referer": f"https://m.weibo.cn/u/{uid}"},
+        headers={"User-Agent": UA, "Referer": f"https://m.weibo.cn/u/{uid}", "Cookie": _weibo_cookie()},
         timeout=TIMEOUT,
     )
+    data = r.json()
+    if data.get("ok") != 1:
+        raise RuntimeError(f"weibo api ok={data.get('ok')} (游客 cookie 失效或频控，见 WEIBO_COOKIE 说明)")
     out = []
-    for card in r.json().get("data", {}).get("cards", []):
+    for card in data.get("data", {}).get("cards", []):
         blog = card.get("mblog")
         if not blog:
             continue
@@ -138,6 +154,7 @@ def fetch_watchlist():
             items.extend(fetch_weibo_user(uid))
         except Exception as e:  # noqa: BLE001
             errors[f"weibo:{uid}"] = str(e)
+        time.sleep(1)  # 频控保护
     for uid in wl["xueqiu"]:
         try:
             items.extend(fetch_xueqiu_user(uid))

@@ -52,7 +52,7 @@ python -m app.collector --loop 30
 
 ```json
 {
-  "weibo": ["1234567890"],      // 微博博主 uid（数字）
+  "weibo": ["1234567890"],      // 微博博主 uid（数字），需游客 cookie（见下）
   "xueqiu": ["9876543210"],     // 雪球用户 id（数字）
   "wechat": [],                  // 公众号（需配合 RSSHub 等代理渠道，见 app/watchlist.py）
   "x": ["elonmusk"]              // X(Twitter) 用户名（不带@），经 Nitter/RSSHub 免费通路抓取
@@ -60,6 +60,8 @@ python -m app.collector --loop 30
 ```
 
 X 抓取走公共 Nitter 实例（xcancel.com 等）的 RSS，多实例自动切换；公共实例不稳定，全部失败时跳过该博主并记录错误，后续可升级为付费 API 或登录态抓取。
+
+微博接口现需游客 cookie：用浏览器无痕模式打开 `https://m.weibo.cn` 任意页面，从开发者工具复制请求 Cookie（含 `SUB`/`_T_WM` 等），存入环境变量 `WEIBO_COOKIE` 或写入 `finhot/data/weibo_cookie.txt`（该目录已 gitignore，不会被提交）。游客 cookie 一般可用数周，失效时采集日志会出现 `weibo:<uid>` 报错，重新复制即可。
 
 列表为空时跳过；单个博主抓取失败不影响其余。
 
