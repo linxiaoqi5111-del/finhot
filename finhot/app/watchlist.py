@@ -157,7 +157,13 @@ def fetch_rss(url, source_name):
     r = requests.get(url, headers={"User-Agent": UA}, timeout=TIMEOUT)
     if r.status_code != 200 or (b"<rss" not in r.content[:500] and b"<feed" not in r.content[:500] and b"<?xml" not in r.content[:200]):
         raise RuntimeError(f"{url} -> HTTP {r.status_code} 非 RSS")
-    root = ET.fromstring(r.content)
+    text = r.content.decode(r.apparent_encoding or "utf-8", "ignore")
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", text)  # XML 1.0 非法控制字符
+    try:
+        root = ET.fromstring(text.encode("utf-8"))
+    except ET.ParseError:
+        text = re.sub(r"&(?!#?\w+;)", "&amp;", text)  # 未转义的裸 &
+        root = ET.fromstring(text.encode("utf-8"))
     out = []
     for it in root.iter("item"):
         link = (it.findtext("link") or "").strip()
