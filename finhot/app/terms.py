@@ -81,17 +81,31 @@ def extract_terms(text):
     return terms
 
 
-def count_daily_terms(docs, min_doc=2):
-    """docs: 文本列表 -> {term: (文档数, 炒作语境文档数)}，过滤低频与冗余子串。"""
-    df = defaultdict(int)
-    spec = defaultdict(int)
-    for text in docs:
-        speculative = is_speculative(text)
-        for t in extract_terms(text):
+def count_daily_terms(events, min_doc=2):
+    """events: [{"texts": [文本...], "weight": 信源权重}] -> {term: (事件数, 炒作事件数, 权重和)}。
+
+    热度按事件计而非条数计（同一件事的转发只算一次）；权重和 = 提及该词的
+    各事件信源权重之和，用于打分。min_doc 过滤仍按原始条数（避免一条孤例成词）。
+    """
+    df = defaultdict(int)        # 事件数
+    spec = defaultdict(int)      # 炒作语境事件数
+    wsum = defaultdict(float)    # 信源权重和
+    df_items = defaultdict(int)  # 原始条数（仅用于低频过滤）
+    for ev in events:
+        ev_terms = set()
+        speculative = False
+        for text in ev["texts"]:
+            terms = extract_terms(text)
+            ev_terms |= terms
+            speculative = speculative or is_speculative(text)
+            for t in terms:
+                df_items[t] += 1
+        for t in ev_terms:
             df[t] += 1
+            wsum[t] += ev.get("weight", 1.0)
             if speculative:
                 spec[t] += 1
-    df = {t: c for t, c in df.items() if c >= min_doc}
+    df = {t: c for t, c in df.items() if df_items[t] >= min_doc}
     # 子串去冗余：若某词是更长词的子串且文档数几乎相同，则丢弃子串
     terms_sorted = sorted(df, key=len, reverse=True)
     drop = set()
@@ -110,7 +124,7 @@ def count_daily_terms(docs, min_doc=2):
         for long_t in kept[i + 1:]:
             if short_t in long_t and df[short_t] > df[long_t] * 1.5:
                 frag.add(long_t)
-    return {t: (c, spec.get(t, 0)) for t, c in df.items() if t not in frag}
+    return {t: (c, spec.get(t, 0), round(wsum[t], 2)) for t, c in df.items() if t not in frag}
 
 
 # ---- A股炒作闸口 ----

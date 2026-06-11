@@ -10,6 +10,7 @@ import sys
 import time
 
 from . import db
+from .events import build_events
 from .sources import fetch_all
 from .terms import count_daily_terms
 from .watchlist import fetch_watchlist
@@ -17,6 +18,19 @@ from .watchlist import fetch_watchlist
 
 def day_of(ts):
     return datetime.datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+
+
+def recount_day(conn, day):
+    """重算某日：聚类成事件 -> 回写 event_id -> 按事件统计词频。"""
+    rows = conn.execute("SELECT id, source, title, content FROM items WHERE day=?", (day,)).fetchall()
+    events, assign = build_events(rows)
+    conn.executemany("UPDATE items SET event_id=? WHERE id=?", [(eid, iid) for iid, eid in assign.items()])
+    counts = count_daily_terms(events)
+    conn.execute("DELETE FROM term_daily WHERE day=?", (day,))
+    conn.executemany(
+        "INSERT INTO term_daily (term, day, doc_count, spec_count, weight) VALUES (?,?,?,?,?)",
+        [(t, day, c, s, w) for t, (c, s, w) in counts.items()],
+    )
 
 
 def collect_once():
@@ -38,14 +52,7 @@ def collect_once():
                 new += 1
                 days.add(day)
         for day in days:
-            rows = conn.execute("SELECT title, content FROM items WHERE day=?", (day,)).fetchall()
-            docs = [(r["title"] or "") + " " + (r["content"] or "") for r in rows]
-            counts = count_daily_terms(docs)
-            conn.execute("DELETE FROM term_daily WHERE day=?", (day,))
-            conn.executemany(
-                "INSERT INTO term_daily (term, day, doc_count, spec_count) VALUES (?,?,?,?)",
-                [(t, day, c, s) for t, (c, s) in counts.items()],
-            )
+            recount_day(conn, day)
     conn.close()
     print(f"[collector] fetched={len(items)} new={new} days_recomputed={sorted(days)} errors={errors}")
     return new, errors
