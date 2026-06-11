@@ -11,8 +11,8 @@ for day in days:
     with conn:
         conn.execute("DELETE FROM term_daily WHERE day=?", (day,))
         conn.executemany(
-            "INSERT INTO term_daily (term, day, doc_count) VALUES (?,?,?)",
-            [(t, day, c) for t, c in counts.items()],
+            "INSERT INTO term_daily (term, day, doc_count, spec_count) VALUES (?,?,?,?)",
+            [(t, day, c, s) for t, (c, s) in counts.items()],
         )
     print(day, len(counts), "terms")
 conn.close()

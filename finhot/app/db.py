@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS term_daily (
     term TEXT NOT NULL,
     day TEXT NOT NULL,
     doc_count INTEGER NOT NULL,
+    spec_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (term, day)
 );
 CREATE INDEX IF NOT EXISTS idx_term_daily_day ON term_daily(day);
@@ -30,4 +31,7 @@ def connect():
     conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(term_daily)")}
+    if "spec_count" not in cols:
+        conn.execute("ALTER TABLE term_daily ADD COLUMN spec_count INTEGER NOT NULL DEFAULT 0")
     return conn

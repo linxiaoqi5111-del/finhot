@@ -12,6 +12,7 @@ import time
 from . import db
 from .sources import fetch_all
 from .terms import count_daily_terms
+from .watchlist import fetch_watchlist
 
 
 def day_of(ts):
@@ -20,6 +21,9 @@ def day_of(ts):
 
 def collect_once():
     items, errors = fetch_all()
+    wl_items, wl_errors = fetch_watchlist()
+    items.extend(wl_items)
+    errors.update(wl_errors)
     conn = db.connect()
     new = 0
     days = set()
@@ -39,8 +43,8 @@ def collect_once():
             counts = count_daily_terms(docs)
             conn.execute("DELETE FROM term_daily WHERE day=?", (day,))
             conn.executemany(
-                "INSERT INTO term_daily (term, day, doc_count) VALUES (?,?,?)",
-                [(t, day, c) for t, c in counts.items()],
+                "INSERT INTO term_daily (term, day, doc_count, spec_count) VALUES (?,?,?,?)",
+                [(t, day, c, s) for t, (c, s) in counts.items()],
             )
     conn.close()
     print(f"[collector] fetched={len(items)} new={new} days_recomputed={sorted(days)} errors={errors}")

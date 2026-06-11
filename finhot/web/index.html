@@ -66,6 +66,9 @@ mark { background: rgba(249,115,22,.25); color: var(--hot); border-radius: 3px; 
   <label>基线窗口 <select id="baseSel">
     <option value="3">3天</option><option value="7" selected>7天</option><option value="14">14天</option>
   </select></label>
+  <label>A股炒作闸口 <select id="gateSel">
+    <option value="1" selected>开（只看易炒作词）</option><option value="0">关（全部热词）</option>
+  </select></label>
   <button id="refreshBtn">刷新</button>
   <span id="statLine"></span>
 </div>
@@ -78,10 +81,10 @@ mark { background: rgba(249,115,22,.25); color: var(--hot); border-radius: 3px; 
     <div class="placeholder">点击左侧热词查看趋势与相关快讯</div>
   </div>
 </div>
-<div class="footer">FinHot · 热度 = 当日提及该词的快讯条数；突发度 = 相对过去N天基线的提升倍数；NEW = 基线窗口内从未出现的新词。</div>
+<div class="footer">FinHot · 热度 = 当日提及该词的快讯条数；突发度 = 相对过去N天基线的提升倍数；NEW = 基线窗口内从未出现的新词；炒作浓度 = 该词出现在A股炒作语境（涨停/概念/题材/产业链/订单/股票代码等）快讯中的占比，闸口开启时按浓度过滤并加权。</div>
 <script>
 const $ = s => document.querySelector(s);
-let state = { day: '', baseline: 7, active: null };
+let state = { day: '', baseline: 7, gate: 1, active: null };
 
 function spark(trend, w = 120, h = 26, color = '#38bdf8') {
   const max = Math.max(...trend, 1);
@@ -111,7 +114,7 @@ function bigChart(history) {
 }
 
 async function loadBoard() {
-  const q = new URLSearchParams({ baseline: state.baseline, limit: 60 });
+  const q = new URLSearchParams({ baseline: state.baseline, limit: 60, gate: state.gate });
   if (state.day) q.set('day', state.day);
   const data = await (await fetch('/api/hotwords?' + q)).json();
   state.day = data.day;
@@ -124,6 +127,7 @@ async function loadBoard() {
       ${spark(w.trend)}
       <div class="metrics">
         <div class="today"><b>${w.today}</b>今日条数</div>
+        <div><b>${Math.round(w.spec_ratio * 100)}%</b>炒作浓度</div>
         <div class="${w.lift > 2 ? 'lift-up' : ''}"><b>×${w.lift}</b>突发倍数</div>
         <div class="score"><b>${w.score}</b>热度分</div>
       </div>
@@ -156,6 +160,7 @@ async function initDays() {
 
 $('#daySel').onchange = e => { state.day = e.target.value; loadBoard(); };
 $('#baseSel').onchange = e => { state.baseline = +e.target.value; loadBoard(); };
+$('#gateSel').onchange = e => { state.gate = +e.target.value; loadBoard(); };
 $('#refreshBtn').onclick = () => loadBoard();
 initDays().then(loadBoard);
 </script>

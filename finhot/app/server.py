@@ -23,13 +23,19 @@ def _days_back(day, n):
 
 
 @app.get("/api/hotwords")
-def hotwords(day: str = "", baseline: int = Query(7, ge=1, le=30), limit: int = Query(50, ge=1, le=200)):
+def hotwords(
+    day: str = "",
+    baseline: int = Query(7, ge=1, le=30),
+    limit: int = Query(50, ge=1, le=200),
+    gate: int = Query(1, ge=0, le=1),
+    min_spec_ratio: float = Query(0.4, ge=0.0, le=1.0),
+):
     conn = db.connect()
     if not day:
         row = conn.execute("SELECT MAX(day) AS d FROM term_daily").fetchone()
         day = row["d"] or datetime.date.today().isoformat()
     base_days = _days_back(day, baseline)
-    today_rows = conn.execute("SELECT term, doc_count FROM term_daily WHERE day=?", (day,)).fetchall()
+    today_rows = conn.execute("SELECT term, doc_count, spec_count FROM term_daily WHERE day=?", (day,)).fetchall()
     placeholders = ",".join("?" * len(base_days))
     hist = {}
     for r in conn.execute(
@@ -39,13 +45,20 @@ def hotwords(day: str = "", baseline: int = Query(7, ge=1, le=30), limit: int = 
 
     results = []
     for r in today_rows:
-        term, today_count = r["term"], r["doc_count"]
+        term, today_count, spec_count = r["term"], r["doc_count"], r["spec_count"]
+        spec_ratio = spec_count / today_count if today_count else 0.0
+        if gate and spec_ratio < min_spec_ratio:
+            continue
         h = hist.get(term, {})
         baseline_avg = sum(h.values()) / len(base_days)
         score, lift = burst_score(today_count, baseline_avg)
+        if gate:
+            score = round(score * spec_ratio, 2)
         results.append({
             "term": term,
             "today": today_count,
+            "spec_count": spec_count,
+            "spec_ratio": round(spec_ratio, 2),
             "baseline_avg": round(baseline_avg, 2),
             "lift": lift,
             "score": score,
