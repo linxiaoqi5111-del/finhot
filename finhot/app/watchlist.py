@@ -6,10 +6,13 @@
 - 微博：m.weibo.cn 的容器 API 免登录可用，但有频控；uid -> containerid=107603{uid}
 - 雪球：需要先访问主页拿 cookie（有 WAF，失败时自动跳过该博主）
 - 公众号：无公开 API，通过搜狗微信搜索抓最新文章，频控严格，仅尽力而为
+- X(Twitter)：经 Nitter/RSSHub 免费通路抓 RSS，多实例自动切换，公共实例不稳定时跳过
 """
+import email.utils
 import json
 import os
 import time
+import xml.etree.ElementTree as ET
 
 import requests
 
@@ -22,9 +25,9 @@ def load_watchlist():
     try:
         with open(WATCHLIST_PATH, encoding="utf-8") as f:
             data = json.load(f)
-        return {k: data.get(k, []) for k in ("weibo", "xueqiu", "wechat")}
+        return {k: data.get(k, []) for k in ("weibo", "xueqiu", "wechat", "x")}
     except FileNotFoundError:
-        return {"weibo": [], "xueqiu": [], "wechat": []}
+        return {"weibo": [], "xueqiu": [], "wechat": [], "x": []}
 
 
 def fetch_weibo_user(uid):
@@ -78,6 +81,55 @@ def fetch_wechat_account(name):
     raise NotImplementedError("公众号抓取需配置代理渠道（如 RSSHub: /wechat/...）")
 
 
+# 公共 Nitter 实例经常失效，按顺序尝试；RSSHub 公共实例作兜底
+X_RSS_ENDPOINTS = [
+    "https://xcancel.com/{user}/rss",
+    "https://nitter.net/{user}/rss",
+    "https://nitter.privacyredirect.com/{user}/rss",
+    "https://nitter.tiekoetter.com/{user}/rss",
+    "https://rsshub.app/twitter/user/{user}",
+]
+
+
+def fetch_x_user(user):
+    user = user.lstrip("@")
+    last_err = None
+    for tpl in X_RSS_ENDPOINTS:
+        try:
+            # rss.xcancel.com 只放行白名单内的 RSS 阅读器 UA（如 FreshRSS/TT-RSS）
+            r = requests.get(
+                tpl.format(user=user),
+                headers={"User-Agent": "FreshRSS/1.24.0 (Linux; https://freshrss.org)"},
+                timeout=TIMEOUT,
+            )
+            if r.status_code != 200 or b"<rss" not in r.content[:200]:
+                last_err = f"{tpl.format(user=user)} -> HTTP {r.status_code}"
+                continue
+            root = ET.fromstring(r.content)
+            out = []
+            for it in root.iter("item"):
+                link = (it.findtext("link") or "").strip()
+                # 链接统一改回 x.com（Nitter 实例域名 + #m 锚点 -> 原推链接）
+                if "/status/" in link:
+                    link = "https://x.com/" + link.split("://", 1)[-1].split("/", 1)[-1].split("#", 1)[0]
+                pub = it.findtext("pubDate")
+                ts = int(email.utils.parsedate_to_datetime(pub).timestamp()) if pub else int(time.time())
+                out.append({
+                    "id": _mkid("x", link or it.findtext("guid") or ""),
+                    "source": f"X@{user}",
+                    "title": "",
+                    "content": _strip_html(it.findtext("description") or it.findtext("title") or ""),
+                    "url": link,
+                    "ts": ts,
+                })
+            if out:
+                return out
+            last_err = f"{tpl.format(user=user)} -> empty feed"
+        except Exception as e:  # noqa: BLE001
+            last_err = str(e)
+    raise RuntimeError(f"all X endpoints failed: {last_err}")
+
+
 def fetch_watchlist():
     wl = load_watchlist()
     items, errors = [], {}
@@ -96,4 +148,9 @@ def fetch_watchlist():
             items.extend(fetch_wechat_account(name))
         except Exception as e:  # noqa: BLE001
             errors[f"wechat:{name}"] = str(e)
+    for user in wl["x"]:
+        try:
+            items.extend(fetch_x_user(user))
+        except Exception as e:  # noqa: BLE001
+            errors[f"x:{user}"] = str(e)
     return items, errors

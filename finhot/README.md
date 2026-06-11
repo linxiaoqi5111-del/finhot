@@ -54,9 +54,12 @@ python -m app.collector --loop 30
 {
   "weibo": ["1234567890"],      // 微博博主 uid（数字）
   "xueqiu": ["9876543210"],     // 雪球用户 id（数字）
-  "wechat": []                   // 公众号（需配合 RSSHub 等代理渠道，见 app/watchlist.py）
+  "wechat": [],                  // 公众号（需配合 RSSHub 等代理渠道，见 app/watchlist.py）
+  "x": ["elonmusk"]              // X(Twitter) 用户名（不带@），经 Nitter/RSSHub 免费通路抓取
 }
 ```
+
+X 抓取走公共 Nitter 实例（xcancel.com 等）的 RSS，多实例自动切换；公共实例不稳定，全部失败时跳过该博主并记录错误，后续可升级为付费 API 或登录态抓取。
 
 列表为空时跳过；单个博主抓取失败不影响其余。
 
