@@ -53,6 +53,9 @@ header .sub { color: var(--muted); font-size: 13px; }
 .news-item .txt a:hover { color: var(--accent); }
 mark { background: rgba(249,115,22,.25); color: var(--hot); border-radius: 3px; padding: 0 2px; }
 .footer { padding: 16px 28px 30px; color: var(--muted); font-size: 12px; }
+.tab { background: var(--panel2); color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; font-size: 13px; cursor: pointer; }
+.tab.active { color: var(--text); border-color: var(--accent); }
+.themes { color: var(--accent); font-size: 12px; }
 @media (max-width: 900px) { .layout { flex-direction: column; } .detail { position: static; width: 100%; } }
 </style>
 </head>
@@ -74,7 +77,13 @@ mark { background: rgba(249,115,22,.25); color: var(--hot); border-radius: 3px; 
 </div>
 <div class="layout">
   <div class="board card">
-    <h2>🔥 突发热词榜 <span style="color:var(--muted);font-weight:400;font-size:12px">按突发度排序 · 点击查看详情</span></h2>
+    <h2 style="gap:6px">
+      <span id="boardTabs">
+        <button class="tab active" data-board="industry">🔥 产业题材榜</button>
+        <button class="tab" data-board="event">⚡ 催化事件榜</button>
+        <button class="tab" data-board="entity">🏢 实体异动榜</button>
+      </span>
+      <span style="color:var(--muted);font-weight:400;font-size:12px">点击查看详情</span></h2>
     <div id="list"></div>
   </div>
   <div class="detail card" id="detail">
@@ -84,7 +93,7 @@ mark { background: rgba(249,115,22,.25); color: var(--hot); border-radius: 3px; 
 <div class="footer">FinHot · 热度 = 当日提及该词的快讯条数；突发度 = 相对过去N天基线的提升倍数；NEW = 基线窗口内从未出现的新词；炒作浓度 = 该词出现在A股炒作语境（涨停/概念/题材/产业链/订单/股票代码等）快讯中的占比，闸口开启时按浓度过滤并加权。</div>
 <script>
 const $ = s => document.querySelector(s);
-let state = { day: '', baseline: 7, gate: 1, active: null };
+let state = { day: '', baseline: 7, gate: 1, board: 'industry', active: null };
 
 function spark(trend, w = 120, h = 26, color = '#38bdf8') {
   const max = Math.max(...trend, 1);
@@ -114,7 +123,7 @@ function bigChart(history) {
 }
 
 async function loadBoard() {
-  const q = new URLSearchParams({ baseline: state.baseline, limit: 60, gate: state.gate });
+  const q = new URLSearchParams({ baseline: state.baseline, limit: 60, gate: state.gate, board: state.board });
   if (state.day) q.set('day', state.day);
   const data = await (await fetch('/api/hotwords?' + q)).json();
   state.day = data.day;
@@ -122,8 +131,9 @@ async function loadBoard() {
   $('#list').innerHTML = data.hotwords.map((w, i) => `
     <div class="row" data-term="${encodeURIComponent(w.term)}">
       <div class="rank ${i < 3 ? 'top' : ''}">${i + 1}</div>
-      <div class="term">${w.term}</div>
+      <div class="term">${w.term}${w.themes && w.themes.length ? `<div class="themes">→ ${w.themes.join(' / ')}</div>` : ''}</div>
       ${w.is_new ? '<span class="badge new">NEW</span>' : ''}
+      ${w.type === 'geo' ? '<span class="badge" style="color:var(--muted)">地缘</span>' : ''}
       ${spark(w.trend)}
       <div class="metrics">
         <div class="today"><b>${w.today}</b>今日条数</div>
@@ -163,6 +173,12 @@ $('#daySel').onchange = e => { state.day = e.target.value; loadBoard(); };
 $('#baseSel').onchange = e => { state.baseline = +e.target.value; loadBoard(); };
 $('#gateSel').onchange = e => { state.gate = +e.target.value; loadBoard(); };
 $('#refreshBtn').onclick = () => loadBoard();
+document.querySelectorAll('#boardTabs .tab').forEach(t => t.onclick = () => {
+  document.querySelectorAll('#boardTabs .tab').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  state.board = t.dataset.board;
+  loadBoard();
+});
 initDays().then(loadBoard);
 </script>
 </body>
