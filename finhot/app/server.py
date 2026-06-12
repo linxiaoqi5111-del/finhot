@@ -11,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .events import source_tier
-from .lexicon import GEO_RESCUE, TYPE_MULTIPLIER, classify, entity_themes
+from .lexicon import GEO_RESCUE, INDUSTRY_THEMES, TYPE_MULTIPLIER, classify, entity_themes, geo_themes
 from .terms import burst_score
 
 app = FastAPI(title="FinHot 金融热词监控")
@@ -19,16 +19,32 @@ app = FastAPI(title="FinHot 金融热词监控")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "web")
 
 
-def _geo_rescued(conn, day, term):
-    """地缘词的产业关联豁免：同日含该词的快讯里出现油气/军工/航运等关联词则不降权。"""
+# 产业语境关键词：用于判断候选词是否有产业上下文
+INDUSTRY_CONTEXT = set("""
+订单 产能 扩产 投产 量产 招标 中标 供应 供应商 产业链 上游 下游 渗透率 市占率 出货量
+价格 涨价 提价 降价 报价 均价 出厂价 含税价 现货价 期货价
+技术路线 专利 突破 验证 送样 试产 商业化 量化 良率 良品率
+概念股 龙头 受益 题材 板块 产业 技术 设备 制造 研发 工厂 产线 产品
+国产替代 自主可控 关税 补贴 政策
+""".split())
+
+
+def _has_industry_context(conn, day, term):
+    """检查同日含该词的快讯是否有产业语境。"""
     rows = conn.execute(
         "SELECT title, content FROM items WHERE day=? AND (title LIKE ? OR content LIKE ?) LIMIT 50",
         (day, f"%{term}%", f"%{term}%"),
     ).fetchall()
     for r in rows:
         text = (r["title"] or "") + (r["content"] or "")
+        if any(w in text for w in INDUSTRY_CONTEXT):
+            return True
         if any(w in text for w in GEO_RESCUE):
             return True
+        # 同样检查产业白名单词出现
+        for theme in INDUSTRY_THEMES:
+            if len(theme) >= 2 and theme in text and theme != term:
+                return True
     return False
 
 
@@ -76,11 +92,12 @@ def hotwords(
             score = round(score * spec_ratio, 2)
         ttype = classify(term)
         if board == "industry":
-            if ttype in ("entity", "event"):
+            if ttype in ("entity", "event", "geo"):
                 continue
             mult = TYPE_MULTIPLIER[ttype]
-            if ttype == "geo" and _geo_rescued(conn, day, term):
-                mult = 1.0
+            # candidate 词必须有产业上下文才能上榜
+            if ttype == "candidate" and not _has_industry_context(conn, day, term):
+                continue
             score = round(score * mult, 2)
         elif board == "event":
             if ttype not in ("event", "geo"):
@@ -88,10 +105,15 @@ def hotwords(
         elif board == "entity":
             if ttype != "entity":
                 continue
+        themes = []
+        if ttype == "entity":
+            themes = entity_themes(term)
+        elif ttype == "geo":
+            themes = geo_themes(term)
         results.append({
             "term": term,
             "type": ttype,
-            "themes": entity_themes(term) if ttype == "entity" else [],
+            "themes": themes,
             "today": today_count,
             "weight": round(today_w, 2),
             "spec_count": spec_count,
