@@ -11,11 +11,25 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .events import source_tier
+from .lexicon import GEO_RESCUE, TYPE_MULTIPLIER, classify, entity_themes
 from .terms import burst_score
 
 app = FastAPI(title="FinHot 金融热词监控")
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "web")
+
+
+def _geo_rescued(conn, day, term):
+    """地缘词的产业关联豁免：同日含该词的快讯里出现油气/军工/航运等关联词则不降权。"""
+    rows = conn.execute(
+        "SELECT title, content FROM items WHERE day=? AND (title LIKE ? OR content LIKE ?) LIMIT 50",
+        (day, f"%{term}%", f"%{term}%"),
+    ).fetchall()
+    for r in rows:
+        text = (r["title"] or "") + (r["content"] or "")
+        if any(w in text for w in GEO_RESCUE):
+            return True
+    return False
 
 
 def _days_back(day, n):
@@ -30,6 +44,7 @@ def hotwords(
     limit: int = Query(50, ge=1, le=200),
     gate: int = Query(1, ge=0, le=1),
     min_spec_ratio: float = Query(0.4, ge=0.0, le=1.0),
+    board: str = Query("industry", pattern="^(industry|event|entity)$"),
 ):
     conn = db.connect()
     if not day:
@@ -50,17 +65,33 @@ def hotwords(
         term, today_count, spec_count = r["term"], r["doc_count"], r["spec_count"]
         today_w = r["weight"] or today_count  # 旧数据 weight=0 时退回事件数
         spec_ratio = spec_count / today_count if today_count else 0.0
-        if gate and spec_ratio < min_spec_ratio:
+        if gate and board == "industry" and spec_ratio < min_spec_ratio:
             continue
         h = hist.get(term, {})
         hw = hist_w.get(term, {})
         baseline_avg = sum(h.values()) / len(base_days)
         baseline_w = sum(hw[d] or h[d] for d in hw) / len(base_days)
         score, lift = burst_score(today_w, baseline_w)
-        if gate:
+        if gate and board == "industry":
             score = round(score * spec_ratio, 2)
+        ttype = classify(term)
+        if board == "industry":
+            if ttype in ("entity", "event"):
+                continue
+            mult = TYPE_MULTIPLIER[ttype]
+            if ttype == "geo" and _geo_rescued(conn, day, term):
+                mult = 1.0
+            score = round(score * mult, 2)
+        elif board == "event":
+            if ttype not in ("event", "geo"):
+                continue
+        elif board == "entity":
+            if ttype != "entity":
+                continue
         results.append({
             "term": term,
+            "type": ttype,
+            "themes": entity_themes(term) if ttype == "entity" else [],
             "today": today_count,
             "weight": round(today_w, 2),
             "spec_count": spec_count,
