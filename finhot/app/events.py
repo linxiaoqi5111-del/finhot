@@ -11,20 +11,26 @@ import re
 CJK_RUN = re.compile(r"[\u4e00-\u9fff]+")
 LATIN = re.compile(r"[A-Za-z][A-Za-z0-9\-+]{1,14}")
 
-# T1：官方 7x24 快讯线（一手、密度高、最权威）
-T1_SOURCES = {"新浪财经7x24", "东方财富快讯", "华尔街见闻", "同花顺快讯", "格隆汇", "财联社"}
-# T2：博主个人号（二手转述/观点，前缀识别）
+# ---- 信源四层分级 ----
+# T1 产业优质信源（权重 1.3）：公告级 + 行业权威
+T1_SOURCES = {"财联社", "格隆汇", "华尔街见闻"}
+# T1.5 综合财经快讯（权重 0.8）：快但噪声多
+T15_SOURCES = {"新浪财经7x24", "东方财富快讯", "同花顺快讯"}
+# T2 博主个人号（权重 0.5）
 T2_PREFIXES = ("微博@", "雪球@", "公众号@", "X@")
+# 其余 RSS/产业媒体 → T1.2
 
-TIER_WEIGHTS = {1.0: 1.0, 1.5: 0.7, 2.0: 0.4}
+TIER_WEIGHTS = {1.0: 1.3, 1.2: 1.0, 1.5: 0.8, 2.0: 0.5}
 
 
 def source_tier(source):
     if source in T1_SOURCES:
         return 1.0
+    if source in T15_SOURCES:
+        return 1.5
     if source.startswith(T2_PREFIXES):
         return 2.0
-    return 1.5  # 通用媒体 RSS（36氪、联合早报财经……）
+    return 1.2  # 产业媒体 RSS / 垂直媒体
 
 
 def tier_weight(source):

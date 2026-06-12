@@ -85,27 +85,54 @@ ENTITY_THEMES = {
     "财新": [],
 }
 
+# 地缘实体 → 产业映射（地缘词不进产业榜，进实体概榜带映射）
+GEO_ENTITY_THEMES = {
+    "科威特": ["原油", "中东地缘", "航运"],
+    "巴林": ["原油", "中东地缘"],
+    "巴基斯坦": ["军工", "地缘风险"],
+    "伊朗": ["原油", "中东地缘", "军工"],
+    "以色列": ["军工", "中东地缘"],
+    "中东": ["原油", "航运", "黄金"],
+    "俄罗斯": ["能源", "粮食", "军工"],
+    "乌克兰": ["军工", "粮食", "能源"],
+    "红海": ["航运", "集运", "油运"],
+    "霍尔木兹": ["原油", "航运"],
+    "台海": ["军工", "半导体"],
+    "南海": ["军工", "航运"],
+    "沙特": ["原油", "中东地缘"],
+    "印度": ["制造业转移", "稀土"],
+    "韩国": ["存储芯片", "HBM", "半导体"],
+    "日本": ["半导体设备", "汽车"],
+    "欧洲": ["新能源车", "光伏"],
+    "欧盟": ["新能源车", "碳关税"],
+}
+
 # 词类型 -> 产业相关性系数（乘进最终热度分）
-TYPE_MULTIPLIER = {"industry": 1.5, "candidate": 1.0, "entity": 0.0, "geo": 0.3, "event": 0.0}
+TYPE_MULTIPLIER = {"industry": 1.5, "candidate": 1.0, "entity": 0.0, "geo": 0.0, "event": 0.0}
 
 
 def classify(term):
-    """词 -> 类型。entity/event 不进产业榜（各自有独立榜）。"""
+    """词 -> 类型。entity/event/geo 不进产业榜（各自有独立榜）。"""
     t = term.upper()
     if t in ENTITY_THEMES or term in ENTITY_THEMES:
         return "entity"
-    if term in GEO_WORDS or any(g in term for g in GEO_WORDS):
-        return "geo"
-    if term in EVENT_WORDS:
-        return "event"
+    # 产业词优先于地缘/事件（「军工」既在产业库又像地缘词，应归产业）
     if term in INDUSTRY_THEMES or t in INDUSTRY_THEMES:
         return "industry"
-    # 白名单子串命中（如「人形机器人概念」含「人形机器人」）按产业词处理
     for theme in INDUSTRY_THEMES:
         if len(theme) >= 3 and theme in term:
             return "industry"
+    if term in GEO_WORDS or any(g in term for g in GEO_WORDS if len(g) >= 2):
+        return "geo"
+    if term in EVENT_WORDS:
+        return "event"
     return "candidate"
 
 
 def entity_themes(term):
     return ENTITY_THEMES.get(term.upper()) or ENTITY_THEMES.get(term) or []
+
+
+def geo_themes(term):
+    """地缘词→关联产业映射。"""
+    return GEO_ENTITY_THEMES.get(term) or []

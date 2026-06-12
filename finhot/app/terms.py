@@ -3,7 +3,7 @@
 热词的特点是"突然冒出来"（钼代钨、CCL、τ定律），不可能靠预设词表，
 所以候选来自三路：
 1. jieba 分词出的长度>=2的词
-2. 中文 2-4 字 n-gram（捕捉词典里没有的新词，如"钼代钨"）
+2. 中文 2-6 字 n-gram（捕捉词典外新词与产业短语，如"钼代钨""液冷服务器"）
 3. 英文/希腊字母 token（捕捉 CCL、τ定律 这类符号词）
 
 热度 = 当日提及该词的快讯条数；突发度 = 当日值相对过去 N 天基线的倍数。
@@ -39,6 +39,14 @@ STOPWORDS = set("""
 最高 最低 重磅 暴涨 暴跌 大涨 大跌 利好 利空 炸了 爆了 刷屏 突然 全面 彻底 继续 轰动 惊人 罕见 紧急
 回应 预测 估计 相信 觉得 看好 看空 观点 评论 解读 盘点 梳理 复盘 总结 展望 点评 直击 聚焦 围绕 涉及
 上市公司 实验室 集团股份 股份公司
+关键 独立 路径 直接 拥有 标准 选择 保持 体现 强化 优化 完善 深化 深入 助力 赋能 引领 驱动 把握 坚持 发挥
+地区和平 和平进程 进程 共识 友好 交流 沟通 合作伙伴 伙伴 一致 积极 稳步 有序 有效 切实 务实 全力
+希望 复杂 自己 开启 覆盖 验证 真实 工具 全新 团队 用户 品牌 生成 高级 快速 许多 扩张 两年 以上 重新
+采用 海外 数量 变化 结构 大会 法律 任务 数字 下午 在于 还有 新兴 上行 前沿 逻辑 转向 个股 这种 领先 自主
+具备 具有 本届 财富 支付 合资 配套 拉升 记录表 期银日 飞行 装置 跌超 金属
+体系 这是 开放 这场 系列 定义 负责 叙事 门槛 达成 架构 加入 统一 率先 一条 属于
+延续 相对 加仑 分钟 但斌 期金 设备 气体 模态
+当下 个人 融合 员工 旗下 根据 动态 形式 面对 基于 接入 整体 积累 重整 火山引擎
 控制 管理 重要 领域 基本 增加 减少 提高 降低 部分 全部 可能 或者 以及 对于 关于 通过 进行
 情况 问题 工作 项目 业务 报告 研究 分析 技术 系统 平台 模式 增速 规模 水平 同期 累计 出现
 有限公司 公告称 本次 重大 事项 存在 其他 主要 确定 目标 方式 总股本 万股 股东 股权 控股 集团 上市
@@ -67,7 +75,7 @@ GENERIC_LATIN = {"https", "http", "www", "com", "cn", "html", "api", "app", "ceo
 _FUNC_CHARS = set("的了是在将已与对为于也都该或被把其这那但并而则即从向至因由据称如若让之及等呢吗啊吧就又再很更最仅只未非何每各另某些此何")
 
 
-def _token_ngrams(piece, lo=2, hi=4):
+def _token_ngrams(piece, lo=2, hi=6):
     """按 jieba 分词边界拼接相邻 token 生成候选词（捕捉词典外新词如「六氟化钨」），
     不再从任意字位置切 n-gram，从根上避免「朗普谈伊」这类跨词碎片。"""
     toks = list(jieba.cut(piece))
@@ -133,14 +141,19 @@ def count_daily_terms(events, min_doc=2):
             if speculative:
                 spec[t] += 1
     df = {t: c for t, c in df.items() if df_items[t] >= min_doc}
-    # 子串去冗余：若某词是更长词的子串且文档数几乎相同，则丢弃子串
+    # 短语压制子词：长短语存在时压掉共现度高的子词（「液冷服务器」压掉「液冷」「服务器」）
+    # 产业白名单短语优先（industry 词吃 candidate 子词更激进）
+    from .lexicon import INDUSTRY_THEMES
     terms_sorted = sorted(df, key=len, reverse=True)
     drop = set()
     for i, long_t in enumerate(terms_sorted):
+        long_industry = long_t in INDUSTRY_THEMES or long_t.upper() in INDUSTRY_THEMES
         for short_t in terms_sorted[i + 1:]:
             if short_t in drop or short_t not in long_t:
                 continue
-            if df[short_t] <= df[long_t] * 1.34:
+            # 如果长词是产业词而短词不是，更激进地压制（2x 足够）
+            threshold = 2.0 if long_industry else 1.5
+            if df[short_t] <= df[long_t] * threshold:
                 drop.add(short_t)
     df = {t: c for t, c in df.items() if t not in drop}
     # 片段去噪：若某词包含一个明显更热的短词（如「统特朗普」含「特朗普」），
