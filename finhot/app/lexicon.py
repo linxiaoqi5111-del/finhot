@@ -25,15 +25,44 @@ GPU ASIC HBM 存储芯片 先进封装 CHIPLET 晶圆代工 光刻机 光刻胶 
 量子计算 量子通信 6G 卫星通信 北斗 信创 国产替代 鸿蒙 昇腾 欧拉
 游戏 短剧 AIGC AI眼镜 AR VR MR 智能穿戴 折叠屏 钛合金 PCB 覆铜板 CCL 服务器
 白酒 免税 跨境电商 预制菜 宠物经济 银发经济 冰雪经济 首发经济 新质生产力
+具身 芯片 通信 电池 云服务 云计算 碳交易 碳中和 新材料 复合材料 ARF KRF
 """.split())
 
-# ---- 事件催化词（进事件榜）----
+# ---- 事件催化词（进事件榜，不进产业榜）----
 EVENT_WORDS = set("""
 制裁 关税 反制 轰炸 袭击 空袭 停火 开战 冲突 谈判 磋商 会晤 声明 协定
 降息 加息 降准 印花税 国债 专项债 减税 补贴 限购 限售 摇号 集采 反垄断 立案 调查
 涨价 提价 降价 扩产 减产 停产 复产 招标 中标价 订单落地 量产 投产 出口管制 禁运 豁免
 IPO 退市 重组 并购 借壳 举牌 要约收购 私有化 分拆 配股 定增 解禁 停牌 复牌
+上线 发布 上市 落地 签约 签署 获批 批复 过会 备案 挂牌 交割 交付
 """.split())
+
+# ---- 产业题材结构前缀（「AI+名词」「液冷+」等结构短语天然是好词）----
+INDUSTRY_PREFIXES = [
+    "AI", "国产", "液冷", "光", "先进", "固态", "人形", "商业", "卫星",
+    "数据", "低空", "智能", "新能源", "半导体", "量子", "碳化", "氮化",
+    "自动", "无人", "飞行", "脑机", "合成", "基因", "细胞",
+]
+
+# ---- 产业锚点词（用于上下文共现判断）----
+INDUSTRY_ANCHORS = set("""
+订单 产能 扩产 投产 量产 招标 中标 供应 供应商 产业链 上游 下游 渗透率 市占率 出货量
+价格 涨价 提价 降价 报价 均价 出厂价 含税价 现货价 期货价 吨价
+技术路线 专利 突破 验证 送样 试产 商业化 良率 良品率 制程 工艺 迭代
+概念股 龙头 受益 题材 板块 产业 技术 设备 制造 研发 工厂 产线 产品 材料
+国产替代 自主可控 关税 补贴 政策 扶持 规划 白名单
+芯片 服务器 机器人 电池 算力 模型 传感器 激光 光学 封装 晶圆
+客户 厂商 龙头企业 出货 装机 产量 库存 需求 排产 开工率 稼动率
+""".split())
+
+
+def has_industry_prefix(term):
+    """词是否有产业题材结构前缀。"""
+    t = term.upper()
+    for pfx in INDUSTRY_PREFIXES:
+        if t.startswith(pfx.upper()) and len(term) > len(pfx):
+            return True
+    return False
 
 # ---- 地缘/国家词（默认降权，同语境命中关联词时恢复）----
 GEO_WORDS = set("""
@@ -68,6 +97,11 @@ ENTITY_THEMES = {
     "中芯国际": ["晶圆代工", "国产替代", "半导体设备"],
     "寒武纪": ["AI芯片", "国产算力", "ASIC"],
     "北方华创": ["半导体设备", "国产替代"],
+    "贵州茅台": ["白酒"],
+    "茅台": ["白酒"],
+    "鼎龙": ["光刻胶", "CMP", "半导体材料"],
+    "鼎龙股份": ["光刻胶", "CMP", "半导体材料"],
+    "火山引擎": ["云计算", "大模型", "AI云服务"],
     "字节跳动": ["大模型", "AIGC", "智能体"],
     "阿里": ["大模型", "云计算", "电商"],
     "腾讯": ["大模型", "游戏", "云计算"],
@@ -111,10 +145,28 @@ GEO_ENTITY_THEMES = {
 TYPE_MULTIPLIER = {"industry": 1.5, "candidate": 1.0, "entity": 0.0, "geo": 0.0, "event": 0.0}
 
 
+# 实体残片 → 完整实体名（用于合并碎片切词）
+ENTITY_FRAGMENTS = {
+    "火山": "火山引擎",
+    "英伟": "英伟达",
+    "海力士": "SK海力士",
+    "宁德": "宁德时代",
+    "华创": "北方华创",
+    "寒武": "寒武纪",
+    "中芯": "中芯国际",
+    "特朗普": "特朗普",
+    "拜登": "拜登",
+    "奥特": "奥特曼",
+}
+
+
 def classify(term):
     """词 -> 类型。entity/event/geo 不进产业榜（各自有独立榜）。"""
     t = term.upper()
     if t in ENTITY_THEMES or term in ENTITY_THEMES:
+        return "entity"
+    # 实体残片 → entity（火山→实体榜，不进产业榜）
+    if term in ENTITY_FRAGMENTS:
         return "entity"
     # 产业词优先于地缘/事件（「军工」既在产业库又像地缘词，应归产业）
     if term in INDUSTRY_THEMES or t in INDUSTRY_THEMES:
@@ -130,6 +182,10 @@ def classify(term):
 
 
 def entity_themes(term):
+    # 实体残片映射到完整实体的题材
+    full = ENTITY_FRAGMENTS.get(term)
+    if full:
+        return ENTITY_THEMES.get(full.upper()) or ENTITY_THEMES.get(full) or []
     return ENTITY_THEMES.get(term.upper()) or ENTITY_THEMES.get(term) or []
 
 

@@ -11,7 +11,10 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .events import source_tier
-from .lexicon import GEO_RESCUE, INDUSTRY_THEMES, TYPE_MULTIPLIER, classify, entity_themes, geo_themes
+from .lexicon import (
+    GEO_RESCUE, INDUSTRY_ANCHORS, INDUSTRY_THEMES, TYPE_MULTIPLIER,
+    classify, entity_themes, geo_themes, has_industry_prefix,
+)
 from .terms import burst_score
 
 app = FastAPI(title="FinHot 金融热词监控")
@@ -19,33 +22,73 @@ app = FastAPI(title="FinHot 金融热词监控")
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "..", "web")
 
 
-# 产业语境关键词：用于判断候选词是否有产业上下文
-INDUSTRY_CONTEXT = set("""
-订单 产能 扩产 投产 量产 招标 中标 供应 供应商 产业链 上游 下游 渗透率 市占率 出货量
-价格 涨价 提价 降价 报价 均价 出厂价 含税价 现货价 期货价
-技术路线 专利 突破 验证 送样 试产 商业化 量化 良率 良品率
-概念股 龙头 受益 题材 板块 产业 技术 设备 制造 研发 工厂 产线 产品
-国产替代 自主可控 关税 补贴 政策
-""".split())
+# ---- 准入制：candidate 词必须满足 ≥2 条准入条件才能进产业榜 ----
+# 条件：① 命中产业白名单子串  ② 有结构前缀(AI+/液冷+)  ③ 上下文锚点共现≥2
+# ④ 与其他产业白名单词共现  ⑤ 来自 T1 产业信源  ⑥ 长度≥3字（更具体）
+# 结构硬门槛：抽象后缀词（-性/-度/-化）、角色词（-人/-者）、≤2字短词直接不准入
+_MIN_ADMISSION = 2  # 至少满足 N 个条件
+
+# 抽象概念/角色后缀：以这些字结尾的词是概念词或人物角色词，不是产业题材
+_ABSTRACT_SUFFIXES = set("性度化感者人家师力内外上下中后前时处于面院所部局委会长式体技")
 
 
-def _has_industry_context(conn, day, term):
-    """检查同日含该词的快讯是否有产业语境。"""
+def _admission_check(conn, day, term):
+    """candidate 词准入检查：返回满足的条件数（0 = 结构不合格）。"""
+    cjk_len = sum(1 for c in term if "\u4e00" <= c <= "\u9fff")
+    # 结构硬门槛：纯中文短词（≤2字）不准入（真题材词进白名单）；抽象/角色后缀词不准入
+    if 0 < cjk_len <= 2 and len(term) == cjk_len:
+        return 0
+    if cjk_len and term[-1] in _ABSTRACT_SUFFIXES:
+        return 0
+    score = 0
+
+    # ① 包含产业白名单子串（如「液冷服务器」含「液冷」和「服务器」）
+    for theme in INDUSTRY_THEMES:
+        if len(theme) >= 2 and theme in term and theme != term:
+            score += 1
+            break
+
+    # ② 有产业结构前缀
+    if has_industry_prefix(term):
+        score += 1
+
+    # ③④⑤ 需要查数据库
     rows = conn.execute(
-        "SELECT title, content FROM items WHERE day=? AND (title LIKE ? OR content LIKE ?) LIMIT 50",
+        "SELECT source, title, content FROM items WHERE day=? AND (title LIKE ? OR content LIKE ?) LIMIT 50",
         (day, f"%{term}%", f"%{term}%"),
     ).fetchall()
+    anchor_hits = set()
+    has_theme_cooccur = False
+    has_t1_source = False
     for r in rows:
         text = (r["title"] or "") + (r["content"] or "")
-        if any(w in text for w in INDUSTRY_CONTEXT):
-            return True
-        if any(w in text for w in GEO_RESCUE):
-            return True
-        # 同样检查产业白名单词出现
-        for theme in INDUSTRY_THEMES:
-            if len(theme) >= 2 and theme in text and theme != term:
-                return True
-    return False
+        # ③ 产业锚点共现
+        for w in INDUSTRY_ANCHORS:
+            if w in text and w != term:
+                anchor_hits.add(w)
+        # ④ 与其他产业白名单词共现
+        if not has_theme_cooccur:
+            for theme in INDUSTRY_THEMES:
+                if len(theme) >= 2 and theme in text and theme != term:
+                    has_theme_cooccur = True
+                    break
+        # ⑤ T1 信源
+        if not has_t1_source and source_tier(r["source"]) <= 1.0:
+            has_t1_source = True
+
+    if len(anchor_hits) >= 2:
+        score += 1
+    if has_theme_cooccur:
+        score += 1
+    if has_t1_source:
+        score += 1
+
+    # ⑥ 长度 ≥ 3 字（更具体的短语，如「数据中心」vs「数据」）
+    cjk_len = sum(1 for c in term if "\u4e00" <= c <= "\u9fff")
+    if cjk_len >= 3 or (not term.isascii() and len(term) >= 3):
+        score += 1
+
+    return score
 
 
 def _days_back(day, n):
@@ -95,9 +138,13 @@ def hotwords(
             if ttype in ("entity", "event", "geo"):
                 continue
             mult = TYPE_MULTIPLIER[ttype]
-            # candidate 词必须有产业上下文才能上榜
-            if ttype == "candidate" and not _has_industry_context(conn, day, term):
-                continue
+            # candidate 准入制：≥3字中文词需≥2条件；英文/混合词需≥3条件（防 AGENT/SUPER 这类泛英文词）
+            if ttype == "candidate":
+                admission = _admission_check(conn, day, term)
+                cjk_len = sum(1 for c in term if "\u4e00" <= c <= "\u9fff")
+                min_req = _MIN_ADMISSION if cjk_len >= 3 else 3
+                if admission < min_req:
+                    continue
             score = round(score * mult, 2)
         elif board == "event":
             if ttype not in ("event", "geo"):
