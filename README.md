@@ -7,7 +7,7 @@
 #### 我自己每天在用的一些 AI 技能和 Prompt，都开源在这里
 
 [![License](https://img.shields.io/badge/License-MIT-3B82F6?style=for-the-badge)](./LICENSE)
-[![Skills](https://img.shields.io/badge/Skills-3-10B981?style=for-the-badge)](#-skills)
+[![Skills](https://img.shields.io/badge/Skills-4-10B981?style=for-the-badge)](#-skills)
 [![Prompts](https://img.shields.io/badge/Prompts-1-F59E0B?style=for-the-badge)](#-prompts)
 [![AgentSkills](https://img.shields.io/badge/AgentSkills-Standard-8B5CF6?style=for-the-badge)](https://agentskills.io)
 
@@ -34,6 +34,7 @@
 | 🧹 [**neat-freak（洁癖）**](#-neat-freak洁癖) | 干完活跑一下 `/neat`，自动把你这次改的东西跟项目文档、CLAUDE.md、Agent 记忆全部对齐 | [公众号文章](https://mp.weixin.qq.com/s/tg1wd-iN2gWHWhXdY0faeg) |
 | 🔭 [**hv-analysis（横纵分析法）**](#-hv-analysis横纵分析法) | 想搞懂一个产品/公司/概念是怎么回事，丢给它，给你一份万字 PDF 研究报告 | [公众号文章](https://mp.weixin.qq.com/s/Y_uRMYBmdLWUPnz_ac7jWA) |
 | ✍️ [**khazix-writer（卡兹克写作）**](#-khazix-writer卡兹克写作) | 装上之后，Agent 用我的口吻和节奏写公众号长文 | [公众号文章](https://mp.weixin.qq.com/s/AtxGrii_K-nzkwUM9SNhEg) |
+| 📈 [**trading-review-wiki（交易复盘知识库）**](#-trading-review-wiki交易复盘知识库) | 用 Codex CLI 维护一个会检索、会验证、会纠错的交易复盘「活知识库」 | [原仓库](https://github.com/ymj8903668-droid/trading-review-wiki) |
 
 ### Prompts
 
@@ -160,6 +161,31 @@ sync up          # English
 [![Tessl](https://img.shields.io/badge/Tessl-0.1.1-3B82F6?style=flat-square)](https://tessl.io/registry/khazix-skills/khazix-writer)
 
 → [SKILL.md](./khazix-writer/SKILL.md) · [公众号讲解](https://mp.weixin.qq.com/s/AtxGrii_K-nzkwUM9SNhEg)
+
+</td></tr>
+</table>
+
+<table>
+<tr><td>
+
+### 📈 trading-review-wiki（交易复盘知识库）
+
+> *"不以盈亏论对错，以是否符合系统论对错。"*
+
+一套围绕 A 股交易复盘的「活知识库」工具集。它把原始资料（`raw/`）、LLM 维护的正式 wiki、知识图谱、长期记忆（`brain`）和结构化时序事实（`facts`）组织成一个**可检索、可验证、可纠错、可迭代**的研究系统，通过 Codex CLI 操作。
+
+**它能干什么**
+
+- **多源问答 `ask`**：融合六路证据（wiki / raw / graph / facts / brain / stock_daily_sql，编号 W/R/G/F/M/S），固定六段式回答——结论 / 证据链 / 分歧反证 / 后续验证 / 交易含义 / 引用来源。
+- **App-grade 摄入**：`prepare → api-run → finalize → apply --write`，把一篇资料正式沉淀进 wiki，带严格写入边界（`raw/` 永不被写，`apply` 默认 dry-run）。
+- **盘前/盘后 `daily-loop`**：盘前出预测、盘后按 1/3/5/10/20 日窗口验证。
+- **公司深度研究 / brain 长期记忆 / 行情验证 / wiki 质量治理 / 时序事实审计**。
+
+**和其它 skill 不一样的地方**
+
+这不是一段纯指令，而是一个**带源码的完整工具链**（CLI + 一个 Tauri 桌面端）。装上后需要 `npm install`，并准备一个 Codex 登录态或 `OPENAI_API_KEY` 才能跑需要 LLM 的命令。原作者是公众号「杰哥」(`ymj0418`)，以 GPL v3.0 开源。
+
+→ [SKILL.md](./trading-review-wiki/SKILL.md) · [项目 README](./trading-review-wiki/README.md) · [原仓库](https://github.com/ymj8903668-droid/trading-review-wiki)
 
 </td></tr>
 </table>

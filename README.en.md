@@ -7,7 +7,7 @@
 #### A few AI skills and prompts I actually use every day, open-sourced as-is
 
 [![License](https://img.shields.io/badge/License-MIT-3B82F6?style=for-the-badge)](./LICENSE)
-[![Skills](https://img.shields.io/badge/Skills-3-10B981?style=for-the-badge)](#-skills)
+[![Skills](https://img.shields.io/badge/Skills-4-10B981?style=for-the-badge)](#-skills)
 [![Prompts](https://img.shields.io/badge/Prompts-1-F59E0B?style=for-the-badge)](#-prompts)
 [![AgentSkills](https://img.shields.io/badge/AgentSkills-Standard-8B5CF6?style=for-the-badge)](https://agentskills.io)
 
@@ -34,6 +34,7 @@ Each one was running in my own projects long enough to prove it actually saves t
 | 🧹 [**neat-freak**](#-neat-freak) | After a session, run `/neat` to reconcile your project docs, CLAUDE.md, and agent memory with the code | [Article (Chinese)](https://mp.weixin.qq.com/s/tg1wd-iN2gWHWhXdY0faeg) |
 | 🔭 [**hv-analysis**](#-hv-analysis) | Drop a product/company/concept into it and get a 10k–30k word PDF research report | [Article (Chinese)](https://mp.weixin.qq.com/s/Y_uRMYBmdLWUPnz_ac7jWA) |
 | ✍️ [**khazix-writer**](#-khazix-writer) | Makes the agent write long-form Chinese articles in my personal voice | [Article (Chinese)](https://mp.weixin.qq.com/s/AtxGrii_K-nzkwUM9SNhEg) |
+| 📈 [**trading-review-wiki**](#-trading-review-wiki) | Operate a self-correcting, verifiable trading-review knowledge base via the Codex CLI | [Upstream repo](https://github.com/ymj8903668-droid/trading-review-wiki) |
 
 ### Prompts
 
@@ -162,6 +163,31 @@ You want "good general writing." This skill takes a position. It **refuses** cor
 [![Tessl](https://img.shields.io/badge/Tessl-0.1.1-3B82F6?style=flat-square)](https://tessl.io/registry/khazix-skills/khazix-writer)
 
 → [SKILL.md](./khazix-writer/SKILL.md) · [Article (Chinese)](https://mp.weixin.qq.com/s/AtxGrii_K-nzkwUM9SNhEg)
+
+</td></tr>
+</table>
+
+<table>
+<tr><td>
+
+### 📈 trading-review-wiki
+
+> *"Right or wrong isn't decided by P&L — it's decided by whether you followed the system."*
+
+A toolkit around a **living** A-share trading-review knowledge base. It organizes raw sources (`raw/`), an LLM-maintained wiki, a knowledge graph, long-term memory (`brain`), and structured temporal facts (`facts`) into a system you can **search, verify, correct, and iterate** — driven by the Codex CLI.
+
+**What it does**
+
+- **Multi-source `ask`** — fuses six evidence sources (wiki / raw / graph / facts / brain / stock_daily_sql, keyed W/R/G/F/M/S) into a fixed six-section answer: Conclusion / Evidence chain / Dissent & counter-evidence / Follow-up validation / Trading implication / Citations.
+- **App-grade ingestion** — `prepare → api-run → finalize → apply --write`, with strict write boundaries (`raw/` is never written, `apply` is dry-run unless `--write`).
+- **Premarket/postclose `daily-loop`** — predict before the open, validate over 1/3/5/10/20-day windows after.
+- **Company deep research / brain long-term memory / stock-price validation / wiki hygiene / temporal-facts auditing.**
+
+**How it differs from the other skills**
+
+This isn't a single instruction set — it's a **full toolkit with source code** (a CLI plus a Tauri desktop app). After installing it you need to run `npm install` and have a Codex login or `OPENAI_API_KEY` to run the LLM-backed commands. Authored by 「杰哥」(WeChat `ymj0418`), licensed GPL v3.0.
+
+→ [SKILL.md](./trading-review-wiki/SKILL.md) · [Project README](./trading-review-wiki/README.md) · [Upstream repo](https://github.com/ymj8903668-droid/trading-review-wiki)
 
 </td></tr>
 </table>
