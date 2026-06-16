@@ -6,10 +6,10 @@ import datetime
 import os
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import board, db, feed
+from . import board, brief, db, feed
 from .events import source_tier
 
 app = FastAPI(title="FinHot 金融热词监控")
@@ -51,6 +51,38 @@ def feed_hot(
     )
     conn.close()
     return data
+
+
+def _build_brief(day, baseline, gate, min_spec_ratio):
+    conn = db.connect()
+    feed_data = feed.build_hot_feed(
+        conn, day=day, baseline=baseline, gate=gate, min_spec_ratio=min_spec_ratio,
+    )
+    conn.close()
+    return brief.build_brief(feed_data)
+
+
+@app.get("/feed/brief.json")
+def feed_brief_json(
+    day: str = "",
+    baseline: int = Query(7, ge=1, le=30),
+    gate: int = Query(1, ge=0, le=1),
+    min_spec_ratio: float = Query(0.4, ge=0.0, le=1.0),
+):
+    """规则简报（结构化）：lead 导语 + 三段榜单，每条带标签。"""
+    return _build_brief(day, baseline, gate, min_spec_ratio)
+
+
+@app.get("/feed/brief.md")
+def feed_brief_md(
+    day: str = "",
+    baseline: int = Query(7, ge=1, le=30),
+    gate: int = Query(1, ge=0, le=1),
+    min_spec_ratio: float = Query(0.4, ge=0.0, le=1.0),
+):
+    """规则简报（Markdown 文本）：便于直接发布/播报。"""
+    md = brief.render_markdown(_build_brief(day, baseline, gate, min_spec_ratio))
+    return PlainTextResponse(md, media_type="text/markdown; charset=utf-8")
 
 
 @app.get("/api/term/{term}")
