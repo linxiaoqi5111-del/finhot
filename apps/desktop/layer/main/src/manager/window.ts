@@ -340,7 +340,7 @@ class WindowManagerStatic {
         preload: this.config.windowPreferences.preloadScript,
         sandbox: false,
         webviewTag: true,
-        webSecurity: !DEV,
+        webSecurity: false,
         nodeIntegration: true,
         contextIsolation: false,
       },

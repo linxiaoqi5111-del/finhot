@@ -72,12 +72,14 @@ const fetchOpenAICompatibleChatCompletion = async ({
 export const requestOpenAICompatibleChatCompletion = async (
   input: OpenAICompatibleChatCompletionInput,
 ) => {
+  // Always use IPC in Electron to avoid CORS issues in production (webSecurity: true)
   if (ipcServices?.ai?.openAICompatibleChatCompletion) {
     return ipcServices.ai.openAICompatibleChatCompletion(
       input,
     ) as Promise<OpenAICompatibleChatCompletionResponse>
   }
 
+  // In non-Electron environments (web), use direct fetch
   return fetchOpenAICompatibleChatCompletion(input)
 }
 
@@ -113,11 +115,13 @@ const fetchOpenAICompatibleEmbedding = async ({
 }
 
 export const requestOpenAICompatibleEmbedding = async (input: OpenAICompatibleEmbeddingInput) => {
+  // Always use IPC in Electron to avoid CORS issues in production (webSecurity: true)
   if (ipcServices?.ai?.openAICompatibleEmbedding) {
     return ipcServices.ai.openAICompatibleEmbedding(
       input,
     ) as Promise<OpenAICompatibleEmbeddingResponse>
   }
 
+  // In non-Electron environments (web), use direct fetch
   return fetchOpenAICompatibleEmbedding(input)
 }
