@@ -180,10 +180,14 @@ const ByokActiveJobRow = ({
   const getPhaseLabel = useByokPhaseLabel()
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-md bg-fill-secondary/70 px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-text">{title}</div>
-        <div className="truncate text-xs text-text-tertiary">{entryId}</div>
+    <div className="flex items-center justify-between gap-3 overflow-hidden rounded-md bg-fill-secondary/70 px-3 py-2">
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="truncate text-sm font-medium text-text" title={title}>
+          {title}
+        </div>
+        <div className="truncate text-xs text-text-tertiary" title={entryId}>
+          {entryId}
+        </div>
       </div>
       <div className="shrink-0 text-xs font-medium text-blue">{getPhaseLabel(phase)}</div>
     </div>
@@ -196,10 +200,14 @@ const EmbeddingActiveJobRow = ({ entryId }: { entryId: string }) => {
   const title = entry?.title?.trim() || entryId
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-md bg-fill-secondary/70 px-3 py-2">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-text">{title}</div>
-        <div className="truncate text-xs text-text-tertiary">{entryId}</div>
+    <div className="flex items-center justify-between gap-3 overflow-hidden rounded-md bg-fill-secondary/70 px-3 py-2">
+      <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="truncate text-sm font-medium text-text" title={title}>
+          {title}
+        </div>
+        <div className="truncate text-xs text-text-tertiary" title={entryId}>
+          {entryId}
+        </div>
       </div>
       <div className="shrink-0 text-xs font-medium text-blue">
         {t("embedding_processing.phase.embedding")}
