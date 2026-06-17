@@ -244,7 +244,7 @@ export const PROVIDER_OPTIONS: ByokProviderOption[] = [
     models: [],
     iconClassName: PROVIDER_ICON_CLASS_NAMES.custom,
     apiFormat: "openai-compatible",
-    requiresApiKey: true,
+    requiresApiKey: false,
   },
 ]
 

@@ -60,7 +60,7 @@ const useByokPhaseLabel = () => {
 }
 
 const ProcessingSectionShell = ({ children }: { children: ReactNode }) => (
-  <section className="mt-6">{children}</section>
+  <section className="mt-6 min-w-0">{children}</section>
 )
 
 const ProcessingSectionHeader = ({
@@ -107,10 +107,10 @@ const ProcessingPanel = ({
 
   return (
     <ProcessingSectionShell>
-      <div className="space-y-3">
+      <div className="min-w-0 space-y-3">
         <ProcessingSectionHeader title={title} description={description} />
 
-        <div className="rounded-lg border border-fill-secondary p-4">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-fill-secondary p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <span
@@ -133,12 +133,14 @@ const ProcessingPanel = ({
           <div className="mt-4">{stats}</div>
 
           {activeJobs.length > 0 ? (
-            <div className="mt-4 space-y-2">
+            <div className="mt-4 min-w-0 space-y-2">
               <div className="text-xs font-medium text-text-secondary">
                 {t(`${namespace}.active_jobs`)}
               </div>
               {activeJobs.map((job) => (
-                <div key={job.entryId}>{renderActiveJob(job.entryId)}</div>
+                <div key={job.entryId} className="min-w-0 overflow-hidden">
+                  {renderActiveJob(job.entryId)}
+                </div>
               ))}
             </div>
           ) : null}
@@ -180,8 +182,8 @@ const ByokActiveJobRow = ({
   const getPhaseLabel = useByokPhaseLabel()
 
   return (
-    <div className="flex items-center justify-between gap-3 overflow-hidden rounded-md bg-fill-secondary/70 px-3 py-2">
-      <div className="min-w-0 flex-1 overflow-hidden">
+    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-md bg-fill-secondary/70 px-3 py-2">
+      <div className="min-w-0 overflow-hidden">
         <div className="truncate text-sm font-medium text-text" title={title}>
           {title}
         </div>
@@ -200,8 +202,8 @@ const EmbeddingActiveJobRow = ({ entryId }: { entryId: string }) => {
   const title = entry?.title?.trim() || entryId
 
   return (
-    <div className="flex items-center justify-between gap-3 overflow-hidden rounded-md bg-fill-secondary/70 px-3 py-2">
-      <div className="min-w-0 flex-1 overflow-hidden">
+    <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-md bg-fill-secondary/70 px-3 py-2">
+      <div className="min-w-0 overflow-hidden">
         <div className="truncate text-sm font-medium text-text" title={title}>
           {title}
         </div>

@@ -129,7 +129,7 @@ export const ByokSection = () => {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
