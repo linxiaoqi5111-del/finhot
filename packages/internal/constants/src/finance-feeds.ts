@@ -1,7 +1,16 @@
 /**
  * Preset financial RSS feeds for FinHot.
  * Categories: 监管政策 / 产品发布 / 行业动态 / 研报 / 观点洞察
+ *
+ * URL priority: local RSSHub (localhost:1200) > public fallback (rss.kael.ink)
+ * The local instance is faster, more reliable, and supports cookie-based sources.
  */
+
+/** Base URL for local self-hosted RSSHub instance */
+export const LOCAL_RSSHUB_BASE = "http://localhost:1200"
+
+/** Fallback public RSSHub instance */
+export const FALLBACK_RSSHUB_BASE = "https://rss.kael.ink"
 
 export interface FinanceFeed {
   title: string
@@ -26,46 +35,40 @@ export const FinanceFeedCategoryMap: Record<
 export const PRESET_FINANCE_FEEDS: FinanceFeed[] = [
   // 监管政策
   {
-    title: "证监会新闻",
-    url: "https://rss.kael.ink/gov/csrc/news",
+    title: "财联社电报",
+    url: `${LOCAL_RSSHUB_BASE}/cls/telegraph`,
     category: "regulatory",
-    description: "中国证监会官方新闻发布",
+    description: "财联社7x24电报快讯",
   },
   {
-    title: "央行公告",
-    url: "https://rss.kael.ink/gov/pbc/goutongjiaoliu",
+    title: "财联社深度",
+    url: `${LOCAL_RSSHUB_BASE}/cls/depth`,
     category: "regulatory",
-    description: "中国人民银行沟通交流",
+    description: "财联社深度报道",
   },
 
   // 行业动态
   {
     title: "华尔街见闻",
-    url: "https://rss.kael.ink/wallstreetcn/news/global",
+    url: `${LOCAL_RSSHUB_BASE}/wallstreetcn/news/global`,
     category: "market",
     description: "华尔街见闻全球快讯",
   },
   {
-    title: "华尔街见闻热门",
-    url: "https://rss.kael.ink/wallstreetcn/hot",
-    category: "market",
-    description: "华尔街见闻热门文章",
-  },
-  {
     title: "金十数据",
-    url: "https://rss.kael.ink/jin10/news",
+    url: `${LOCAL_RSSHUB_BASE}/jin10`,
     category: "market",
     description: "金十数据快讯",
   },
   {
     title: "格隆汇",
-    url: "https://rss.kael.ink/gelonghui/live",
+    url: `${LOCAL_RSSHUB_BASE}/gelonghui/live`,
     category: "market",
     description: "格隆汇实时资讯",
   },
   {
     title: "第一财经",
-    url: "https://rss.kael.ink/yicai/news",
+    url: `${LOCAL_RSSHUB_BASE}/yicai/news`,
     category: "market",
     description: "第一财经新闻",
   },
@@ -73,7 +76,7 @@ export const PRESET_FINANCE_FEEDS: FinanceFeed[] = [
   // 研报
   {
     title: "36氪最新",
-    url: "https://rss.kael.ink/36kr/news/latest",
+    url: `${LOCAL_RSSHUB_BASE}/36kr/news/latest`,
     category: "research",
     description: "36氪最新科技商业资讯",
   },
@@ -87,8 +90,14 @@ export const PRESET_FINANCE_FEEDS: FinanceFeed[] = [
   // 观点洞察
   {
     title: "财新网",
-    url: "https://rss.kael.ink/caixin/latest",
+    url: `${LOCAL_RSSHUB_BASE}/caixin/latest`,
     category: "opinion",
     description: "财新网深度报道",
+  },
+  {
+    title: "知乎热榜",
+    url: `${LOCAL_RSSHUB_BASE}/zhihu/hot`,
+    category: "opinion",
+    description: "知乎热门话题",
   },
 ]
