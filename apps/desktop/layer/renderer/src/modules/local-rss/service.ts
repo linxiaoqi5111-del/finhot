@@ -93,15 +93,88 @@ const toPreviewEntry = (entry: EntrySchema): ParsedEntry => {
 
 const assertRssService = () => {
   if (!ipcServices?.rss?.preview) {
-    throw new Error("Local RSS requires the Electron app runtime")
+    return null
   }
 
   return ipcServices.rss
 }
 
-type RssPreviewResult = Awaited<ReturnType<ReturnType<typeof assertRssService>["preview"]>>
+type RssPreviewResult = {
+  feed: {
+    id: string
+    title: string | null
+    url: string
+    description: string | null
+    image: string | null
+    errorAt: string | null
+    siteUrl: string | null
+    ownerUserId: string | null
+    errorMessage: string | null
+    subscriptionCount: number | null
+    updatesPerWeek: number | null
+    latestEntryPublishedAt: string | null
+    tipUserIds: string[] | null
+    updatedAt: string
+  }
+  entries: Array<{
+    id: string
+    title: string | null
+    url: string | null
+    content: string | null
+    readabilityContent: string | null
+    readabilityUpdatedAt: string | null
+    description: string | null
+    guid: string
+    author: string | null
+    authorUrl: string | null
+    authorAvatar: string | null
+    insertedAt: string
+    publishedAt: string
+    media: Array<{
+      url: string
+      type: "photo" | "video"
+      preview_image_url?: string
+      width?: number
+      height?: number
+    }> | null
+    categories: string[] | null
+    attachments: Array<{
+      url: string
+      duration_in_seconds?: number | string
+      mime_type?: string
+      size_in_bytes?: number
+      title?: string
+    }> | null
+    extra: null
+    language: string | null
+    feedId: string
+    inboxHandle: null
+    read: boolean
+    sources: string[] | null
+    settings: null
+  }>
+}
 type RssPreviewFeed = RssPreviewResult["feed"]
 type RssPreviewEntry = RssPreviewResult["entries"][number]
+
+/**
+ * Web fallback: fetch RSS via the Vite dev server proxy /api/rss/preview
+ */
+const requestPreviewViaWeb = async (
+  url: string,
+  options?: { lite?: boolean; limit?: number },
+): Promise<RssPreviewResult> => {
+  const res = await fetch("/api/rss/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, lite: options?.lite, limit: options?.limit }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "RSS fetch failed" }))
+    throw new Error(err.error ?? `HTTP ${res.status}`)
+  }
+  return res.json()
+}
 
 const requestPreview = async (
   url: string,
@@ -109,13 +182,18 @@ const requestPreview = async (
     lite?: boolean
     limit?: number
   },
-) => {
+): Promise<RssPreviewResult> => {
   if (!isSupportedLocalRssUrl(url)) {
     throw new Error(LOCAL_RSS_URL_MESSAGE)
   }
 
   const rss = assertRssService()
-  return rss.preview({ url, ...options })
+  if (rss) {
+    return rss.preview({ url, ...options })
+  }
+
+  // Web mode fallback: use server-side proxy
+  return requestPreviewViaWeb(url, options)
 }
 
 export async function previewLocalRssFeed({ id, url }: { id?: string; url?: string }) {

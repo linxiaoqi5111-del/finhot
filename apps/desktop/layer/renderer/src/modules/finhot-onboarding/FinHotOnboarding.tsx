@@ -3,12 +3,12 @@ import { Button } from "@follow/components/ui/button/index.js"
 import { ScrollArea } from "@follow/components/ui/scroll-area/ScrollArea.js"
 import type { FinanceFeed, FinanceFeedCategory } from "@follow/constants"
 import { FeedViewType, FinanceFeedCategoryMap, PRESET_FINANCE_FEEDS } from "@follow/constants"
-import { subscriptionSyncService } from "@follow/store/subscription/store"
 import { cn } from "@follow/utils/utils"
 import { m } from "motion/react"
 import { useCallback, useMemo, useState } from "react"
 
 import focalLogoUrl from "~/assets/focal-logo.png"
+import { previewLocalRssFeed } from "~/modules/local-rss/service"
 
 type FeedWithSelected = FinanceFeed & { selected: boolean }
 
@@ -47,15 +47,22 @@ export function FinHotOnboarding({ onClose }: { onClose: () => void }) {
 
     for (const feed of selectedFeeds) {
       try {
-        await subscriptionSyncService.subscribe({
-          url: feed.url,
-          view: FeedViewType.Articles,
-          category: FinanceFeedCategoryMap[feed.category].label,
-          isPrivate: false,
-          hideFromTimeline: null,
-          title: feed.title,
-          feedId: feed.url,
-          listId: undefined,
+        // Preview feed to get metadata, then subscribe + refresh to fetch entries
+        const preview = await previewLocalRssFeed({ url: feed.url })
+        const feedData = preview.feed
+        const { upsertLocalRssSubscription } = await import("~/modules/local-rss/service")
+        await upsertLocalRssSubscription({
+          feed: { ...feedData, type: "feed" as const },
+          subscription: {
+            url: feed.url,
+            view: FeedViewType.Articles,
+            category: FinanceFeedCategoryMap[feed.category].label,
+            isPrivate: false,
+            hideFromTimeline: null,
+            title: feed.title,
+            feedId: feedData.id,
+            listId: undefined,
+          },
         })
       } catch (error) {
         console.error("Failed to subscribe", { feed: feed.title, error })

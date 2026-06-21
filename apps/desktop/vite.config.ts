@@ -19,6 +19,7 @@ import { createDependencyChunksPlugin } from "./plugins/vite/deps"
 import { htmlInjectPlugin } from "./plugins/vite/html-inject"
 import { localesPlugin } from "./plugins/vite/locales"
 import manifestPlugin from "./plugins/vite/manifest"
+import { rssProxyPlugin } from "./plugins/vite/rss-proxy"
 import { createPlatformSpecificImportPlugin } from "./plugins/vite/specific-import"
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url))
@@ -223,6 +224,7 @@ export default ({ mode }) => {
       htmlInjectPlugin(typedEnv),
       process.env.SSL ? mkcert() : false,
       devPrint(),
+      rssProxyPlugin(),
       createDependencyChunksPlugin([
         //  React framework
         ["react", "react-dom"],
