@@ -1,13 +1,13 @@
 {
-  "name": "Focal",
+  "name": "FinHot",
   "type": "module",
   "version": "0.1.4",
   "private": true,
-  "description": "Local-first RSS reader",
-  "author": "Focal",
-  "homepage": "https://github.com/nextcaicai/Focal",
+  "description": "金融热词雷达 - 本地优先的金融信息监控平台",
+  "author": "FinHot",
+  "homepage": "https://github.com/linxiaoqi5111-del/khazix-skills",
   "repository": {
-    "url": "https://github.com/nextcaicai/Focal",
+    "url": "https://github.com/linxiaoqi5111-del/khazix-skills",
     "type": "git"
   },
   "main": "./dist/main/index.js",
@@ -96,6 +96,6 @@
     "vite-tsconfig-paths": "6.1.1"
   },
   "runtimeVersion": "0.1.4",
-  "productName": "Focal",
+  "productName": "FinHot",
   "mainHash": "f8e31cdd0818c42f0178f1beffc80963ee5f066ba72f0b2f00bd336922600e0a"
 }

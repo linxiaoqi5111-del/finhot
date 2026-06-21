@@ -58,7 +58,7 @@ describe("IntegrationService", () => {
         url: "https://example.com",
         title: "KAWA DESIGN 少女前线2：追放 索米·雪兔献礼 1/6比例手办",
         content: "content",
-        author: "Focal",
+        author: "FinHot",
         publishedAt: "2026-05-14T04:20:44.405Z",
         vaultPath,
       }),

@@ -6,7 +6,7 @@ import { cn } from "@follow/utils/utils"
 import { readableContentMaxWidthClassName } from "~/constants/ui"
 import { FocalLogo, FocalWordmark } from "~/modules/brand/FocalLogo"
 
-const PRINT_HOMEPAGE_LABEL = "Focal"
+const PRINT_HOMEPAGE_LABEL = "FinHot"
 
 export const EntryPrintHeader = ({ entryId }: { entryId: string }) => {
   const entry = useEntry(entryId, (state) => ({

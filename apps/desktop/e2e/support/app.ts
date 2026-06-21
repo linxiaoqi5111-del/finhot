@@ -458,7 +458,7 @@ export const openOnboardingFeedForm = async (
   await expect(discoverInput).toBeVisible({ timeout: 15_000 })
   await discoverInput.fill(ONBOARDING_FEED_URL)
   await discoverInput.press("Enter")
-  await expect(page.getByText("Welcome to Focal").first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText("Welcome to FinHot").first()).toBeVisible({ timeout: 15_000 })
 }
 
 export const followOnboardingFeed = async (
@@ -469,14 +469,14 @@ export const followOnboardingFeed = async (
   await openOnboardingFeedForm(page, env, options)
   const onboardingDiscoverCard = page
     .locator("[data-feed-id]")
-    .filter({ hasText: "Welcome to Focal" })
+    .filter({ hasText: "Welcome to FinHot" })
     .first()
   const followButton = onboardingDiscoverCard.getByRole("button", { name: /^Follow$/i })
   if (await followButton.isVisible().catch(() => false)) {
     await expect(followButton).toBeEnabled({ timeout: 15_000 })
     await followButton.click()
   }
-  await expect(page.getByText("Welcome to Focal").first()).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText("Welcome to FinHot").first()).toBeVisible({ timeout: 15_000 })
 }
 
 export const dismissFeedForm = async (page: Page) => {
@@ -507,7 +507,7 @@ const findSettingsFeedRow = async (page: Page, onboardingFeedId: string | null) 
   const fallbackFeedRow = page
     .locator('[data-testid^="settings-feed-row-"]')
     .filter({
-      hasText: "Welcome to Focal",
+      hasText: "Welcome to FinHot",
     })
     .first()
   const settingsViewport = page.locator("#setting-modal [data-radix-scroll-area-viewport]").first()
@@ -541,7 +541,7 @@ export const unsubscribeFirstFeedFromSettings = async (page: Page, _env?: Deskto
   const onboardingFeedItem = page
     .locator("[data-feed-id]")
     .filter({
-      hasText: "Welcome to Focal",
+      hasText: "Welcome to FinHot",
     })
     .first()
   const onboardingFeedId =

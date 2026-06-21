@@ -125,8 +125,8 @@ const InstanceCard = memo(({ item }: { item: InstanceItem }) => {
     />
   )
 
-  const title = isOfficial ? "Focal Official" : ""
-  const description = isOfficial ? "Focal built-in RSSHub" : instance.description
+  const title = isOfficial ? "FinHot Official" : ""
+  const description = isOfficial ? "FinHot built-in RSSHub" : instance.description
 
   const usersStat = isOfficial ? "*" : instance.userCount || 0
   const limitStat = isOfficial

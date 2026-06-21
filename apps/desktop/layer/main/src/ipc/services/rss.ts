@@ -4,7 +4,7 @@ import { version as appVersion } from "@pkg"
 import type { IpcContext } from "electron-ipc-decorator"
 import { IpcMethod, IpcService } from "electron-ipc-decorator"
 
-const RSS_FETCH_USER_AGENT = `Focal/${appVersion} (RSS Reader)`
+const RSS_FETCH_USER_AGENT = `FinHot/${appVersion} (RSS Reader)`
 const RSS_FETCH_TIMEOUT_MS = 120_000
 const RSS_PREVIEW_LITE_TIMEOUT_MS = 30_000
 const RSS_PREVIEW_LITE_ENTRY_LIMIT = 8

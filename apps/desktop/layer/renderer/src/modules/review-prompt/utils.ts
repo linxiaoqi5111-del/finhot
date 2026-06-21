@@ -99,9 +99,9 @@ export const openDesktopFeedbackEmail = async ({
   distribution: DesktopReviewDistribution
   userId: string | null
 }) => {
-  const subject = "Focal feedback"
+  const subject = "FinHot feedback"
   const body = [
-    "Hi Focal team,",
+    "Hi FinHot team,",
     "",
     "Here is my feedback:",
     "",

@@ -2,11 +2,11 @@
   "name": "@follow/database",
   "type": "module",
   "private": true,
-  "author": "Focal",
+  "author": "FinHot",
   "license": "AGPL-3.0-only",
-  "homepage": "https://github.com/nextcaicai/Focal",
+  "homepage": "https://github.com/linxiaoqi5111-del/khazix-skills",
   "repository": {
-    "url": "https://github.com/nextcaicai/Focal",
+    "url": "https://github.com/linxiaoqi5111-del/khazix-skills",
     "type": "git"
   },
   "sideEffects": false,

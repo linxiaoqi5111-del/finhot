@@ -9,7 +9,7 @@ export const createBuildSafeHeaders =
     if (headers["User-Agent"]) {
       headers["User-Agent"] = headers["User-Agent"]
         .replace(/\s?Electron\/[\d.]+/, "")
-        .replace(/\s?(?:Folo|Focal)\/[\d.a-zA-Z-]+/, "")
+        .replace(/\s?(?:Folo|FinHot)\/[\d.a-zA-Z-]+/, "")
     } else {
       headers["User-Agent"] =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
@@ -110,7 +110,7 @@ export const createDesktopAPIHeaders = ({ version }: { version: string }) => {
   return {
     ...commonHeaders,
     ...(platform ? { "X-App-Platform": platform } : {}),
-    "X-App-Name": "Focal Web",
+    "X-App-Name": "FinHot Web",
     "X-App-Version": version,
     ...(DEV ? { "X-App-Dev": "1" } : {}),
   }
@@ -124,10 +124,10 @@ export const createSSRAPIHeaders = ({ version }: { version: string }) => {
   return {
     ...commonHeaders,
     "X-App-Platform": SSRPlatform.SSR,
-    "X-App-Name": "Focal SSR",
+    "X-App-Name": "FinHot SSR",
     "X-App-Version": version,
     "User-Agent":
-      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 Focal",
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36 FinHot",
     ...(DEV ? { "X-App-Dev": "1" } : {}),
   }
 }
@@ -170,7 +170,7 @@ export const createMobileAPIHeaders = ({
   return {
     ...commonHeaders,
     ...(platform ? { "X-App-Platform": platform } : {}),
-    "X-App-Name": "Focal Mobile",
+    "X-App-Name": "FinHot Mobile",
     "X-App-Version": version,
   }
 }

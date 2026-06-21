@@ -67,10 +67,10 @@ async function main() {
     const appxVersion = versionParts.slice(0, 4).join(".")
 
     const config: AppXManifestConfig = {
-      packageName: "Focal",
+      packageName: "FinHot",
       packageDisplayName: isStaging
-        ? "Focal Staging - Local-first RSS reader"
-        : "Focal - Local-first RSS reader",
+        ? "FinHot Staging - 金融热词雷达"
+        : "FinHot - 金融热词雷达",
       publisherDisplayName: "Natural Selection Labs",
       identityName: "NaturalSelectionLabs.Follow-Yourfavoritesinoneinbo",
       version: appxVersion,

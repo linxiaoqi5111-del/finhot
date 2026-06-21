@@ -19,7 +19,7 @@ describe("applyDesktopReleaseConfig", () => {
 
     await writeFile(
       join(projectDir, "package.json"),
-      `${JSON.stringify({ name: "Focal", version: "1.5.0" }, null, 2)}\n`,
+      `${JSON.stringify({ name: "FinHot", version: "1.5.0" }, null, 2)}\n`,
       "utf8",
     )
     await writeFile(
@@ -60,7 +60,7 @@ describe("applyDesktopReleaseConfig", () => {
 
     await writeFile(
       join(projectDir, "package.json"),
-      `${JSON.stringify({ name: "Focal", version: "1.5.0", runtimeVersion: "1.4.9" }, null, 2)}\n`,
+      `${JSON.stringify({ name: "FinHot", version: "1.5.0", runtimeVersion: "1.4.9" }, null, 2)}\n`,
       "utf8",
     )
     await writeFile(
@@ -92,7 +92,7 @@ describe("applyDesktopReleaseConfig", () => {
 
     await writeFile(
       join(projectDir, "package.json"),
-      `${JSON.stringify({ name: "Focal", version: "1.5.0" }, null, 2)}\n`,
+      `${JSON.stringify({ name: "FinHot", version: "1.5.0" }, null, 2)}\n`,
       "utf8",
     )
     await writeFile(

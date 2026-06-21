@@ -45,7 +45,7 @@ export const SettingAbout = () => {
     }
   }
 
-  const handleRateFocal = async () => {
+  const handleRateFinHot = async () => {
     if (!rateTarget) {
       return
     }
@@ -116,7 +116,7 @@ export const SettingAbout = () => {
               label={t("about.rateFocal")}
               description={t("about.rateFocalDescription")}
               onAction={() => {
-                void handleRateFocal()
+                void handleRateFinHot()
               }}
               actionIcon={
                 <i className="i-focal-star text-base transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
@@ -149,7 +149,7 @@ export const SettingAbout = () => {
                     OpenIssueLink: (
                       <a
                         className="text-accent hover:underline"
-                        href="https://github.com/nextcaicai/Focal"
+                        href="https://github.com/linxiaoqi5111-del/khazix-skills"
                         target="_blank"
                         rel="noreferrer"
                       >

@@ -123,7 +123,7 @@ const ignorePattern = new RegExp(`^/node_modules/(?!${[...keepModules].join("|")
 
 const config: ForgeConfig = {
   packagerConfig: {
-    name: isStaging ? "Focal Staging" : "Focal",
+    name: isStaging ? "FinHot Staging" : "FinHot",
     appCategoryType: "public.app-category.news",
     buildVersion: process.env.BUILD_VERSION || undefined,
     appBundleId: "is.follow",
@@ -131,15 +131,15 @@ const config: ForgeConfig = {
     extraResource: ["./resources/app-update.yml"],
     protocols: [
       {
-        name: "Focal",
+        name: "FinHot",
         schemes: ["focal"],
       },
       {
-        name: "Focal Legacy",
+        name: "FinHot Legacy",
         schemes: ["folo"],
       },
       {
-        name: "Focal Legacy",
+        name: "FinHot Legacy",
         schemes: ["follow"],
       },
     ],
@@ -230,7 +230,7 @@ const config: ForgeConfig = {
     }),
     new MakerPKG(
       {
-        name: "Focal",
+        name: "FinHot",
         keychain: process.env.KEYCHAIN_PATH,
       },
       ["mas"],
@@ -240,7 +240,7 @@ const config: ForgeConfig = {
       ? [
           new MakerAppX({
             publisher: "CN=7CBBEB6A-9B0E-4387-BAE3-576D0ACA279E",
-            packageDisplayName: "Focal - Local-first RSS reader",
+            packageDisplayName: "FinHot - 金融热词雷达",
             devCert: "build/dev.pfx",
             assets: "static/appx",
             manifest: "build/appxmanifest.xml",
@@ -253,9 +253,9 @@ const config: ForgeConfig = {
         ]
       : [
           new MakerSquirrel({
-            name: "Focal",
+            name: "FinHot",
             setupIcon: isStaging ? "resources/icon-staging.ico" : "resources/icon.ico",
-            iconUrl: "https://github.com/nextcaicai/Focal/raw/main/apps/desktop/resources/icon.ico",
+            iconUrl: "https://github.com/linxiaoqi5111-del/khazix-skills/raw/main/apps/desktop/resources/icon.ico",
           }),
         ]),
   ],
@@ -277,7 +277,7 @@ const config: ForgeConfig = {
       config: {
         repository: {
           owner: "nextcaicai",
-          name: "Focal",
+          name: "FinHot",
         },
         draft: true,
       },
@@ -290,7 +290,7 @@ const config: ForgeConfig = {
       }
 
       for (const outputPath of packageResult.outputPaths) {
-        const appPath = path.join(outputPath, `${isStaging ? "Focal Staging" : "Focal"}.app`)
+        const appPath = path.join(outputPath, `${isStaging ? "FinHot Staging" : "FinHot"}.app`)
         if (!fs.existsSync(appPath)) {
           continue
         }

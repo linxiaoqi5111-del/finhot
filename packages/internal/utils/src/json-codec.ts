@@ -4,7 +4,7 @@ export class JsonObfuscatedCodec {
   private static charsetLength = JsonObfuscatedCodec.charset.length
 
   // Generate a key
-  private static newKey = "Focal"
+  private static newKey = "FinHot"
   private static legacyKey = "Folo"
 
   // Convert string to byte array

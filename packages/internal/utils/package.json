@@ -2,11 +2,11 @@
   "name": "@follow/utils",
   "type": "module",
   "private": true,
-  "author": "Focal",
+  "author": "FinHot",
   "license": "MIT",
-  "homepage": "https://github.com/nextcaicai/Focal",
+  "homepage": "https://github.com/linxiaoqi5111-del/khazix-skills",
   "repository": {
-    "url": "https://github.com/nextcaicai/Focal",
+    "url": "https://github.com/linxiaoqi5111-del/khazix-skills",
     "type": "git"
   },
   "sideEffects": false,

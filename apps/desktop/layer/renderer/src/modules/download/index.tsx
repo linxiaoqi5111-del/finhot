@@ -49,7 +49,7 @@ export function DownloadPage() {
       <div className="w-full max-w-xs space-y-6 text-center">
         <div>
           <h1 className="mb-3 text-xl font-semibold text-text">
-            {LOCAL_RSS_MODE ? "Local RSS desktop app" : "Download Focal"}
+            {LOCAL_RSS_MODE ? "Local RSS desktop app" : "Download FinHot"}
           </h1>
           <p className="text-sm text-text-secondary">
             {LOCAL_RSS_MODE

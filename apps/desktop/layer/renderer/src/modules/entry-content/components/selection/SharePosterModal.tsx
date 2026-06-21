@@ -185,7 +185,7 @@ export function SharePosterModal({ selectedText, entryId }: SharePosterModalProp
         })
       : new Date().toLocaleDateString()
 
-    const headerText = `${feed?.title || "Focal"}  •  ${dateStr}`
+    const headerText = `${feed?.title || "FinHot"}  •  ${dateStr}`
     ctx.fillText(headerText, padding, currentY)
 
     currentY += headerHeight
@@ -287,7 +287,7 @@ export function SharePosterModal({ selectedText, entryId }: SharePosterModalProp
     ctx.font = "bold 24px Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
     ctx.textAlign = "right"
     ctx.textBaseline = "middle"
-    ctx.fillText("Focal", w - padding, footerY)
+    ctx.fillText("FinHot", w - padding, footerY)
     ctx.globalAlpha = 1
   }, [entry, feed, mode, selectedText, authorAvatarImg])
 

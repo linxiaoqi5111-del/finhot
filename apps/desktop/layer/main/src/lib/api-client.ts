@@ -41,7 +41,7 @@ followClient.addRequestInterceptor(async (ctx) => {
   })
   const sessionCookie = cookies ? getPreferredSessionTokenCookie(cookies) : null
   const headerCookie = sessionCookie ? `${sessionCookie.name}=${sessionCookie.value}` : ""
-  const userAgent = window?.webContents.getUserAgent() || `Focal/${PKG.version}`
+  const userAgent = window?.webContents.getUserAgent() || `FinHot/${PKG.version}`
 
   options.headers = {
     ...header,

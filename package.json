@@ -1,19 +1,19 @@
 {
-  "name": "focal-monorepo",
+  "name": "finhot-monorepo",
   "type": "module",
   "private": true,
   "packageManager": "pnpm@10.17.0",
-  "description": "Local-first RSS reader with BYOK AI",
-  "author": "Focal",
+  "description": "金融热词雷达 - 本地优先的金融信息监控平台",
+  "author": "FinHot",
   "license": "AGPL-3.0-only",
-  "homepage": "https://github.com/nextcaicai/Focal",
+  "homepage": "https://github.com/linxiaoqi5111-del/khazix-skills",
   "repository": {
-    "url": "https://github.com/nextcaicai/Focal",
+    "url": "https://github.com/linxiaoqi5111-del/khazix-skills",
     "type": "git"
   },
   "scripts": {
     "build:packages": "turbo run build --filter=\"./packages/**/*\"",
-    "build:web": "turbo run Focal#build:web",
+    "build:web": "turbo run FinHot#build:web",
     "dedupe:locales": "eslint --fix locales/**",
     "depcheck": "npx depcheck --quiet",
     "dev:web": "turbo run @follow/web#dev",

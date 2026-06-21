@@ -87,7 +87,7 @@ export class FollowUpdateProvider extends Provider<UpdateInfo> {
       files,
       path: primaryPath,
       sha512: primaryFile.sha512,
-      releaseName: `Focal ${app.version}`,
+            releaseName: `FinHot ${app.version}`,
       releaseNotes: null,
       releaseDate: app.releaseDate || new Date().toISOString(),
     }

@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => {
 
   return {
     app: {
-      getName: vi.fn(() => "Focal"),
+      getName: vi.fn(() => "FinHot"),
       quit: vi.fn(),
     },
     buildFromTemplate: vi.fn((template) => ({ template })),

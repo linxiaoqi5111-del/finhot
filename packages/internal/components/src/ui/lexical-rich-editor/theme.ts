@@ -2,7 +2,7 @@
  * Default Lexical theme configuration for consistent styling
  * across editable and read-only rich text components.
  *
- * Uses Focal's UIKit color system with Tailwind classes for
+ * Uses FinHot's UIKit color system with Tailwind classes for
  * automatic light/dark mode adaptation.
  */
 export const defaultLexicalTheme = {

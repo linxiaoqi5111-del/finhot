@@ -16,7 +16,7 @@ const hasProfileData = (profileDir: string) => {
 }
 
 const migrateLegacyDevUserData = (appDataPath: string) => {
-  const userDataDir = path.join(appDataPath, "Focal(dev)")
+  const userDataDir = path.join(appDataPath, "FinHot(dev)")
   const legacyUserDataDir = path.join(appDataPath, "Folo(dev)")
 
   if (!fs.existsSync(legacyUserDataDir)) {

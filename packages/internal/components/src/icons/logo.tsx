@@ -10,7 +10,7 @@ export const Logo = ({
   const { accentColor } = props
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" {...props} ref={ref}>
-      <title>Focal</title>
+      <title>FinHot</title>
       <path
         fill={accentColor || "#0054FC"}
         d="M5.382 0h13.236A5.37 5.37 0 0 1 24 5.383v13.235A5.37 5.37 0 0 1 18.618 24H5.382A5.37 5.37 0 0 1 0 18.618V5.383A5.37 5.37 0 0 1 5.382.001Z"

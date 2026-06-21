@@ -6,7 +6,7 @@ declare global {
     api?: { canWindowBlur: boolean; isWindowsStore: boolean }
     platform: NodeJS.Platform
   }
-  export const APP_NAME = "Focal"
+  export const APP_NAME = "FinHot"
 }
 
 declare module "virtual:pwa-register/react" {

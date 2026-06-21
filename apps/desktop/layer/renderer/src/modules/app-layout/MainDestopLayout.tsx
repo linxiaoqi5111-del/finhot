@@ -31,7 +31,7 @@ const errorTypes = [
 /**
  * MainDestopLayout Component
  *
- * The main desktop layout that serves as the primary container for the Focal application.
+ * The main desktop layout that serves as the primary container for the FinHot application.
  * This layout is responsible for:
  * - Providing the root layout structure with subscription sidebar and main content area
  * - Handling authentication states and displaying login modals

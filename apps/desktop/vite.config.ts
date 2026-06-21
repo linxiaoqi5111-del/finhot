@@ -31,7 +31,7 @@ const devPrint = (): PluginOption => ({
     const _printUrls = server.printUrls
     server.printUrls = () => {
       _printUrls()
-      console.info(`  ${green("➜")}  ${dim("Debug proxy")}: ${cyan("disabled in Focal")}`)
+      console.info(`  ${green("➜")}  ${dim("Debug proxy")}: ${cyan("disabled in FinHot")}`)
     }
   },
 })
@@ -175,7 +175,7 @@ export default ({ mode }) => {
 
           manifest: {
             theme_color: "#000000",
-            name: "Focal",
+            name: "FinHot",
             display: "standalone",
             background_color: "#ffffff",
             icons: [
@@ -302,7 +302,7 @@ export default ({ mode }) => {
 function checkBrowserSupport() {
   if (!("findLastIndex" in Array.prototype) || !("structuredClone" in window)) {
     window.alert(
-      "Focal is not compatible with your browser because your browser version is too old. Please use the latest browser.",
+      "FinHot is not compatible with your browser because your browser version is too old. Please use the latest browser.",
     )
   }
 }
