@@ -112,11 +112,7 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
     } catch (error) {
       setStatus("error")
       const msg = error instanceof Error ? error.message : "订阅失败"
-      if (msg.includes("503") || msg.includes("502") || msg.includes("451")) {
-        setErrorMsg(`${selectedPlatform.label} 源暂时不可用，需要在 RSSHub 配置对应平台的 Cookie`)
-      } else {
-        setErrorMsg(msg)
-      }
+      setErrorMsg(msg)
     }
   }, [input, selectedPlatform])
 
