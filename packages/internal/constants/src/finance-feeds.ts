@@ -100,4 +100,18 @@ export const PRESET_FINANCE_FEEDS: FinanceFeed[] = [
     category: "opinion",
     description: "知乎热门话题",
   },
+
+  // 社交媒体（需要本地 RSSHub + Cookie）
+  {
+    title: "微博财经热搜",
+    url: `${LOCAL_RSSHUB_BASE}/weibo/search/hot`,
+    category: "market",
+    description: "微博实时热搜榜（需本地 RSSHub Cookie）",
+  },
+  {
+    title: "雪球热帖",
+    url: `${LOCAL_RSSHUB_BASE}/xueqiu/hots`,
+    category: "opinion",
+    description: "雪球社区热门讨论（需本地 RSSHub Cookie）",
+  },
 ]
