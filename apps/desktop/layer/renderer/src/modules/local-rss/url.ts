@@ -4,6 +4,9 @@ export const isSupportedLocalRssUrl = (value: string) => {
   const trimmed = value.trim()
   if (!trimmed) return false
 
+  // Allow internal finhot:// scheme (e.g. finhot://twitter/elonmusk)
+  if (trimmed.startsWith("finhot://")) return true
+
   try {
     const parsed = new URL(trimmed)
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {

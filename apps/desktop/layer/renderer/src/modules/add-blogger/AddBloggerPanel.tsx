@@ -56,14 +56,17 @@ const PLATFORMS: Platform[] = [
     id: "twitter",
     label: "X / Twitter",
     icon: "⚫",
-    placeholder: "输入用户名、X 链接 或 RSS 链接",
-    hint: "支持：用户名（elonmusk）、X 链接（https://x.com/elonmusk）、XGo RSS 链接",
+    placeholder: "输入用户名 或 X 链接",
+    hint: "支持：用户名（elonmusk）、X 链接（https://x.com/elonmusk）",
     buildUrl: (input: string) => {
       const trimmed = input.trim()
-      if (trimmed.includes("api.xgo.ing/") || trimmed.includes("/rss")) return trimmed
+      // Already a full RSS URL (XGo, etc.) — pass through
+      if (/^https?:\/\/.+\/rss/i.test(trimmed)) return trimmed
+      // Extract handle from x.com / twitter.com links
       const xUrlMatch = /(?:x\.com|twitter\.com)\/(\w+)\/?$/.exec(trimmed)
       const handle = xUrlMatch ? xUrlMatch[1] : trimmed.replace(/^@/, "")
-      return `https://nt.vern.cc/${handle}/rss`
+      // Use internal scheme handled by the RSS proxy's Twitter converter
+      return `finhot://twitter/${handle}`
     },
   },
   {
