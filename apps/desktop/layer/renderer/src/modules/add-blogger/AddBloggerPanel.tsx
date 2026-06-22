@@ -202,7 +202,7 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
         category: "公众号",
         isPrivate: false,
         hideFromTimeline: null,
-        title: feedData.title || `公众号 - ${trimmed}`,
+        title: feedData.title || "微信公众号 (同步中)",
         feedId: feedData.id,
         listId: undefined,
       },

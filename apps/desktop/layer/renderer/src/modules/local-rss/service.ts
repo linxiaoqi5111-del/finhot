@@ -353,6 +353,24 @@ export async function refreshLocalRssFeed(
   }
 
   await feedActions.upsertMany([nextFeedWithIdentity])
+
+  // Auto-sync subscription title when feed title becomes available
+  if (nextFeed.title) {
+    const subscription = getSubscriptionByFeedId(feed.id)
+    if (subscription) {
+      const subTitle = subscription.title ?? ""
+      const needsSync =
+        !subTitle ||
+        subTitle === "微信公众号 (同步中)" ||
+        subTitle.startsWith("http://localhost:") ||
+        subTitle.startsWith("http://mp.weixin.qq.com") ||
+        subTitle.startsWith("https://mp.weixin.qq.com")
+      if (needsSync && nextFeed.title !== subTitle) {
+        await subscriptionActions.upsertMany([{ ...subscription, title: nextFeed.title }])
+      }
+    }
+  }
+
   const entriesWithFeedId = entries.map((entry) => ({ ...entry, feedId: feed.id }))
   const actionResult = await applyLocalActionsToEntries({
     entries: entriesWithFeedId,
