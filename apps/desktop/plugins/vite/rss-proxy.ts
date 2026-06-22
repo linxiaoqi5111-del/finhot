@@ -154,42 +154,44 @@ function extractBizFromArticle(html: string): { bizId: string; nickname: string 
 /**
  * Cookie-aware HTTP client for Sogou.
  * Sogou blocks requests without session cookies (anti-spider).
- * We warm up a session by visiting sogou.com first, then reuse the Set-Cookie
- * values on subsequent search requests.
+ * We warm up a session by visiting the appropriate domain first, then reuse
+ * the Set-Cookie values on subsequent requests.
  */
-let sogouCookies: string | null = null
-let sogouCookieExpiry = 0
+const sogouSessions: Record<string, { cookies: string; expiry: number }> = {}
 
-async function ensureSogouSession(): Promise<string> {
-  const now = Date.now()
-  if (sogouCookies && now < sogouCookieExpiry) return sogouCookies
+async function ensureSogouSession(domain: "www.sogou.com" | "weixin.sogou.com"): Promise<string> {
+  const cached = sogouSessions[domain]
+  if (cached && Date.now() < cached.expiry) return cached.cookies
 
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8_000)
   try {
-    const res = await fetch("https://www.sogou.com/", {
+    const res = await fetch(`https://${domain}/`, {
       signal: controller.signal,
       headers: { "User-Agent": SOGOU_UA, Accept: "text/html" },
     })
     await res.text()
 
-    // Collect Set-Cookie headers
     const cookies: string[] = []
     const raw = res.headers.getSetCookie?.() ?? []
     for (const c of raw) {
       const kv = c.split(";")[0]
       if (kv) cookies.push(kv)
     }
-    sogouCookies = cookies.join("; ")
-    sogouCookieExpiry = now + 10 * 60_000 // 10 min
-    return sogouCookies
+    const cookieStr = cookies.join("; ")
+    sogouSessions[domain] = { cookies: cookieStr, expiry: Date.now() + 10 * 60_000 }
+    return cookieStr
   } finally {
     clearTimeout(timer)
   }
 }
 
-async function sogouFetch(url: string, timeoutMs = 8_000): Promise<string> {
-  const cookies = await ensureSogouSession()
+async function sogouFetch(
+  url: string,
+  options?: { timeoutMs?: number; domain?: "www.sogou.com" | "weixin.sogou.com" },
+): Promise<string> {
+  const { timeoutMs = 8_000, domain = "www.sogou.com" } = options ?? {}
+  const cookies = await ensureSogouSession(domain)
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
@@ -199,7 +201,7 @@ async function sogouFetch(url: string, timeoutMs = 8_000): Promise<string> {
         "User-Agent": SOGOU_UA,
         Accept: "text/html",
         Cookie: cookies,
-        Referer: "https://www.sogou.com/",
+        Referer: `https://${domain}/`,
       },
     })
     return await res.text()
@@ -208,28 +210,47 @@ async function sogouFetch(url: string, timeoutMs = 8_000): Promise<string> {
   }
 }
 
-/** Fetch a Sogou web search page and extract mp.weixin.qq.com article URLs. */
-async function sogouSearchArticleUrls(query: string): Promise<string[]> {
-  const html = await sogouFetch(`https://www.sogou.com/web?query=${encodeURIComponent(query)}`)
-  const decoded = html.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">")
-  return Array.from(
-    new Set(
-      [...decoded.matchAll(/https?:\/\/mp\.weixin\.qq\.com\/s\?[^"<>\s]+/g)].map((m) => m[0]),
-    ),
-  )
-}
-
-/** Check a batch of article URLs for a matching account nickname. */
-async function findMatchingAccount(
-  articleUrls: string[],
+/**
+ * PRIMARY strategy: Search weixin.sogou.com article search (type=2).
+ *
+ * This endpoint returns Sogou redirect links rather than direct mp.weixin URLs.
+ * Each redirect link leads to an intermediate page whose JS reconstructs the
+ * actual article URL via string concatenation:
+ *   url += 'https://mp.'; url += 'weixin.qq.c'; url += 'om/s?src=11'; ...
+ *
+ * We fetch the intermediate page, parse the concatenated URL, then fetch the
+ * real article to extract biz ID + nickname.
+ */
+async function weixinSogouArticleSearch(
+  name: string,
   nameLower: string,
 ): Promise<ResolvedAccount | null> {
+  const searchUrl = `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(name)}&ie=utf8`
+  const html = await sogouFetch(searchUrl, { domain: "weixin.sogou.com" })
+
+  // Extract Sogou redirect links from the search results page
+  const redirectLinks = [...html.matchAll(/href="(\/link\?url=[^"]+)"/g)].map((m) => m[1]!)
+  if (redirectLinks.length === 0) return null
+
   let bestMatch: ResolvedAccount | null = null
 
-  for (const articleUrl of articleUrls.slice(0, 3)) {
+  for (const rlink of redirectLinks.slice(0, 4)) {
     try {
-      const html = await sogouFetch(articleUrl, 8_000)
-      const extracted = extractBizFromArticle(html)
+      // Fetch the Sogou intermediate redirect page
+      const rpage = await sogouFetch(`https://weixin.sogou.com${rlink}`, {
+        timeoutMs: 6_000,
+        domain: "weixin.sogou.com",
+      })
+
+      // Parse actual article URL from JS string concatenation
+      const urlParts = [...rpage.matchAll(/url\s*\+=\s*'([^']*)'/g)].map((m) => m[1]!)
+      if (urlParts.length === 0) continue
+      const articleUrl = urlParts.join("")
+      if (!articleUrl.includes("mp.weixin.qq.com")) continue
+
+      // Fetch the real article page
+      const articleHtml = await sogouFetch(articleUrl, { timeoutMs: 6_000 })
+      const extracted = extractBizFromArticle(articleHtml)
       if (!extracted) continue
 
       const candidate: ResolvedAccount = {
@@ -256,25 +277,73 @@ async function findMatchingAccount(
   return bestMatch
 }
 
+/**
+ * FALLBACK strategy: regular Sogou web search for mp.weixin.qq.com articles.
+ */
+async function sogouWebSearch(name: string, nameLower: string): Promise<ResolvedAccount | null> {
+  let bestMatch: ResolvedAccount | null = null
+
+  for (const query of [
+    `"${name}" site:mp.weixin.qq.com`,
+    `${name} 微信公众号 site:mp.weixin.qq.com`,
+  ]) {
+    try {
+      const html = await sogouFetch(`https://www.sogou.com/web?query=${encodeURIComponent(query)}`)
+      const decoded = html.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">")
+      const urls = [
+        ...new Set(
+          [...decoded.matchAll(/https?:\/\/mp\.weixin\.qq\.com\/s\?[^"<>\s]+/g)].map((m) => m[0]),
+        ),
+      ]
+
+      for (const articleUrl of urls.slice(0, 3)) {
+        try {
+          const articleHtml = await sogouFetch(articleUrl, { timeoutMs: 6_000 })
+          const extracted = extractBizFromArticle(articleHtml)
+          if (!extracted) continue
+
+          const candidate: ResolvedAccount = {
+            bizId: extracted.bizId,
+            nickname: extracted.nickname,
+            articleUrl,
+          }
+
+          if (extracted.nickname.toLowerCase() === nameLower) return candidate
+
+          if (
+            !bestMatch &&
+            extracted.nickname &&
+            (extracted.nickname.toLowerCase().includes(nameLower) ||
+              nameLower.includes(extracted.nickname.toLowerCase()))
+          ) {
+            bestMatch = candidate
+          }
+        } catch {
+          continue
+        }
+      }
+      if (bestMatch) return bestMatch
+    } catch {
+      continue
+    }
+  }
+
+  return bestMatch
+}
+
 async function resolveWechatBizId(name: string): Promise<ResolvedAccount | null> {
   const nameLower = name.toLowerCase()
 
-  // Race the search against an 8-second deadline so the user gets quick feedback
-  const deadline = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000))
+  // Race against 10-second deadline for quick user feedback
+  const deadline = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000))
 
   const search = (async () => {
-    const queries = [`"${name}" site:mp.weixin.qq.com`, `${name} 微信公众号 site:mp.weixin.qq.com`]
-    const results = await Promise.allSettled(
-      queries.map(async (query) => {
-        const urls = await sogouSearchArticleUrls(query)
-        if (urls.length === 0) return null
-        return findMatchingAccount(urls, nameLower)
-      }),
-    )
-    for (const r of results) {
-      if (r.status === "fulfilled" && r.value) return r.value
-    }
-    return null
+    // 1) Primary: weixin.sogou.com article search with redirect extraction
+    const primary = await weixinSogouArticleSearch(name, nameLower)
+    if (primary) return primary
+
+    // 2) Fallback: regular Sogou web search
+    return sogouWebSearch(name, nameLower)
   })()
 
   return Promise.race([search, deadline])
