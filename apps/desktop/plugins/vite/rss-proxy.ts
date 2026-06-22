@@ -857,54 +857,88 @@ function parseRssFeed(xml: string, feedUrl: string, limit: number) {
   return { feed, entries }
 }
 
+const URL_RE = /^https?:\/\//i
+
+/**
+ * Pre-filter: detect obviously low-quality entries that should be hidden.
+ * Catches: URL-only titles with no body, completely empty entries,
+ * title that is just a duplicate of the link URL.
+ */
+function isLowQualityEntry(entry: {
+  title: string | null
+  url: string | null
+  content: string
+  description: string | null
+}): boolean {
+  const title = (entry.title ?? "").trim()
+  const body = [entry.content, entry.description ?? ""].join(" ").replaceAll(/\s+/g, " ").trim()
+
+  // Completely empty: no title and no body
+  if (!title && body.length < 10) return true
+
+  // Title is a bare URL and body is empty/very short
+  if (URL_RE.test(title) && body.length < 30) return true
+
+  // Title is identical to the entry URL (just a link, no real title)
+  if (entry.url && title === entry.url && body.length < 30) return true
+
+  // Body is just the URL repeated
+  if (entry.url && body === entry.url) return true
+
+  return false
+}
+
 function parseEntries(xml: string, isAtom: boolean, feedUrl: string, limit: number) {
   const itemTag = isAtom ? "entry" : "item"
   const regex = new RegExp(`<${itemTag}[\\s>][\\s\\S]*?</${itemTag}>`, "gi")
   const items = xml.match(regex) ?? []
 
-  return items.slice(0, limit).map((item) => {
-    const title = extractTag(item, "title") ?? ""
-    const link = isAtom
-      ? (extractAttr(item, "link", "href") ?? extractTag(item, "link"))
-      : extractTag(item, "link")
-    const pubDate =
-      extractTag(item, isAtom ? "published" : "pubDate") ??
-      extractTag(item, isAtom ? "updated" : "dc:date")
-    const description = extractTag(item, isAtom ? "summary" : "description") ?? ""
-    const content =
-      extractTag(item, "content:encoded") ?? extractTag(item, "content") ?? description
-    const author = extractTag(item, isAtom ? "name" : "dc:creator") ?? extractTag(item, "author")
+  return items
+    .slice(0, limit)
+    .map((item) => {
+      const title = extractTag(item, "title") ?? ""
+      const link = isAtom
+        ? (extractAttr(item, "link", "href") ?? extractTag(item, "link"))
+        : extractTag(item, "link")
+      const pubDate =
+        extractTag(item, isAtom ? "published" : "pubDate") ??
+        extractTag(item, isAtom ? "updated" : "dc:date")
+      const description = extractTag(item, isAtom ? "summary" : "description") ?? ""
+      const content =
+        extractTag(item, "content:encoded") ?? extractTag(item, "content") ?? description
+      const author = extractTag(item, isAtom ? "name" : "dc:creator") ?? extractTag(item, "author")
 
-    const guid = extractTag(item, isAtom ? "id" : "guid") ?? link ?? title
-    const id = generateId(`${feedUrl}::${guid}`)
-    const publishedAt = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString()
+      const guid = extractTag(item, isAtom ? "id" : "guid") ?? link ?? title
+      const id = generateId(`${feedUrl}::${guid}`)
+      const publishedAt = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString()
 
-    return {
-      id,
-      title: title || null,
-      url: link ?? null,
-      content: stripHtml(content),
-      readabilityContent: null,
-      readabilityUpdatedAt: null,
-      description: stripHtml(description).slice(0, 300) || null,
-      guid: guid ?? id,
-      author: author ?? null,
-      authorUrl: null,
-      authorAvatar: null,
-      insertedAt: new Date().toISOString(),
-      publishedAt,
-      media: null,
-      categories: null,
-      attachments: null,
-      extra: null,
-      language: null,
-      feedId: generateId(feedUrl),
-      inboxHandle: null,
-      read: false,
-      sources: null,
-      settings: null,
-    }
-  })
+      return {
+        id,
+        title: title || null,
+        url: link ?? null,
+        content: stripHtml(content),
+        readabilityContent: null,
+        readabilityUpdatedAt: null,
+        description: stripHtml(description).slice(0, 300) || null,
+        guid: guid ?? id,
+        author: author ?? null,
+        authorUrl: null,
+        authorAvatar: null,
+        insertedAt: new Date().toISOString(),
+        publishedAt,
+        media: null,
+        categories: null,
+        attachments: null,
+        extra: null,
+        language: null,
+        feedId: generateId(feedUrl),
+        inboxHandle: null,
+        read: false,
+        sources: null,
+        settings: null,
+      }
+    })
+    .filter((entry) => !isLowQualityEntry(entry))
 }
 
 function extractTag(xml: string, tag: string): string | null {
