@@ -160,6 +160,11 @@ export const defaultIntegrationSettings: IntegrationSettings = {
 
   // fetch preferences (Electron only)
   useBrowserFetch: false,
+
+  // wechat2rss private deployment
+  enableWechat2rss: false,
+  wechat2rssEndpoint: "",
+  wechat2rssToken: "",
 }
 
 export const defaultAISettings: AISettings = {

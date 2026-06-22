@@ -200,6 +200,57 @@ export function rssProxyPlugin(): PluginOption {
         }
       })
 
+      // ─── /api/rss/proxy-html — Fetch raw HTML for feed auto-discovery ───
+      server.middlewares.use("/api/rss/proxy-html", async (req, res) => {
+        if (handleCors(req, res)) return
+
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+
+        const body = await readJsonBody(req)
+        const { url } = body as { url: string }
+
+        if (!url) {
+          res.writeHead(400, { "Content-Type": "text/plain" })
+          res.end("url is required")
+          return
+        }
+
+        try {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), RSS_FETCH_TIMEOUT_MS)
+
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "FinHot/0.1.4 (RSS Reader)",
+              Accept: "text/html, application/xhtml+xml, */*",
+            },
+          })
+          clearTimeout(timeout)
+
+          if (!response.ok) {
+            res.writeHead(response.status, { "Content-Type": "text/plain" })
+            res.end(`HTTP ${response.status}`)
+            return
+          }
+
+          const html = await response.text()
+          res.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(html)
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(502, { "Content-Type": "text/plain" })
+          res.end(message)
+        }
+      })
+
       // ─── /api/jina/read — Direct Jina Reader endpoint ───
       server.middlewares.use("/api/jina/read", async (req, res) => {
         if (handleCors(req, res)) return
