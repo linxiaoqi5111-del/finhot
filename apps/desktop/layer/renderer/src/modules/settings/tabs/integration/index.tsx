@@ -383,7 +383,39 @@ export const SettingIntegration = () => {
       ],
     }
 
-    return [knowledgeManagement, readingServices, mediaTools, downloadTools]
+    const rssSourceServices = {
+      id: "rss-sources",
+      title: "RSS 源服务",
+      icon: <i className="i-focal-rada" />,
+      integrations: [
+        {
+          key: "wechat2rss",
+          title: "wechat2rss (公众号)",
+          icon: <span className="text-base">🟢</span>,
+          enabled: settings.enableWechat2rss,
+          configured: Boolean(settings.wechat2rssEndpoint && settings.wechat2rssToken),
+          settings: [
+            defineSettingItem("enableWechat2rss", {
+              label: "启用 wechat2rss",
+              description: "通过 wechat2rss 私有部署服务订阅微信公众号文章",
+            }),
+            defineSettingItem("wechat2rssEndpoint", {
+              label: "服务地址",
+              vertical: true,
+              description: "wechat2rss 私有部署的 URL（如 https://your-wechat2rss.example.com）",
+            }),
+            defineSettingItem("wechat2rssToken", {
+              label: "RSS_TOKEN",
+              vertical: true,
+              type: "password",
+              description: "wechat2rss 的 RSS_TOKEN 配置值，用于 API 鉴权",
+            }),
+          ],
+        },
+      ],
+    }
+
+    return [rssSourceServices, knowledgeManagement, readingServices, mediaTools, downloadTools]
   }, [t, settings])
 
   const filteredIntegrations = useMemo(() => {

@@ -7,6 +7,7 @@ import { entryRankScoreSyncService } from "@follow/store/entry-rank-score/store"
 
 import { getAISettings } from "~/atoms/settings/ai"
 import { getActionLanguage, getGeneralSettings } from "~/atoms/settings/general"
+import { resolveConfiguredByokProvider } from "~/modules/settings/tabs/ai/byok/constants"
 
 export const getByokPhases = (): EnrichmentPhase[] => {
   const { summary, translation, autoTag, qualityScore } = getGeneralSettings()
@@ -20,13 +21,18 @@ export const getByokPhases = (): EnrichmentPhase[] => {
   return phases
 }
 
+const isByokAvailable = () => {
+  const aiSettings = getAISettings()
+  return !!resolveConfiguredByokProvider(aiSettings.byok)
+}
+
 const isEmbeddingEnabled = () => LOCAL_RSS_MODE && (getAISettings().embedding?.enabled ?? false)
 
 export const triggerEntryEnrichmentFromIngest = (entryIds: string[]) => {
   if (entryIds.length === 0) return
 
   const byokPhases = getByokPhases()
-  if (byokPhases.length > 0) {
+  if (byokPhases.length > 0 && isByokAvailable()) {
     entryEnrichmentService.enqueueFromIngest({
       entryIds,
       actionLanguage: getActionLanguage(),
@@ -56,7 +62,7 @@ export const triggerEntryEnrichmentBackfill = (entryIds: string[]) => {
   if (unreadIds.length === 0) return
 
   const byokPhases = getByokPhases()
-  if (byokPhases.length > 0) {
+  if (byokPhases.length > 0 && isByokAvailable()) {
     entryEnrichmentService.backfillVisible({
       entryIds: unreadIds,
       actionLanguage: getActionLanguage(),

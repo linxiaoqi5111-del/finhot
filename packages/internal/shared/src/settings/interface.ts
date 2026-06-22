@@ -161,6 +161,11 @@ export interface IntegrationSettings {
 
   // fetch preferences (Electron only)
   useBrowserFetch: boolean
+
+  // wechat2rss private deployment
+  enableWechat2rss: boolean
+  wechat2rssEndpoint: string
+  wechat2rssToken: string
 }
 
 export interface FetchTemplate {

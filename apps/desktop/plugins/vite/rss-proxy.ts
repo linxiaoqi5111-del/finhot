@@ -113,6 +113,113 @@ function handleCors(req: any, res: any): boolean {
   return false
 }
 
+/**
+ * Resolve a URL that should be handled by the built-in Twitter-to-RSS converter.
+ * Returns the Twitter screen_name if matched, null otherwise.
+ *
+ * Matched patterns:
+ *  - finhot://twitter/{screenName}
+ *  - https://x.com/{screenName}
+ *  - https://twitter.com/{screenName}
+ */
+function resolveTwitterScreenName(url: string): string | null {
+  const finhotMatch = /^finhot:\/\/twitter\/(\w+)$/.exec(url)
+  if (finhotMatch) return finhotMatch[1]!
+
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname === "x.com" || parsed.hostname === "twitter.com") {
+      const seg = parsed.pathname.replace(/^\//, "").split("/")[0]
+      if (seg && /^\w+$/.test(seg)) return seg
+    }
+  } catch {
+    /* not a URL */
+  }
+
+  return null
+}
+
+const TWITTER_SYNDICATION_BASE = "https://syndication.twitter.com/srv/timeline-profile/screen-name"
+
+async function fetchTwitterAsRss(screenName: string): Promise<string> {
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), RSS_FETCH_TIMEOUT_MS)
+
+  const response = await fetch(`${TWITTER_SYNDICATION_BASE}/${screenName}`, {
+    signal: controller.signal,
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; FinHot/0.1.4)" },
+  })
+  clearTimeout(timeout)
+
+  if (!response.ok) {
+    throw new Error(`Twitter syndication HTTP ${response.status}`)
+  }
+
+  const html = await response.text()
+  const dataMatch =
+    /<script[^>]*id="__NEXT_DATA__"[^>]*type="application\/json">([\s\S]*?)<\/script>/.exec(html)
+  if (!dataMatch) throw new Error("Failed to parse Twitter syndication response")
+
+  const data = JSON.parse(dataMatch[1]!) as {
+    props: {
+      pageProps: {
+        timeline: {
+          entries: Array<{
+            type: string
+            content: {
+              tweet: {
+                full_text: string
+                created_at: string
+                id_str: string
+                permalink: string
+                user: { screen_name: string; name: string; profile_image_url_https: string }
+              }
+            }
+          }>
+        }
+      }
+    }
+  }
+
+  const entries = data.props.pageProps.timeline.entries.filter((e) => e.type === "tweet")
+  const user = entries[0]?.content?.tweet?.user
+  const displayName = user?.name ?? screenName
+  const profileImage = user?.profile_image_url_https ?? ""
+
+  let rss = `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n<channel>\n`
+  rss += `<title>${escapeXml(displayName)} (@${escapeXml(screenName)})</title>\n`
+  rss += `<link>https://x.com/${escapeXml(screenName)}</link>\n`
+  rss += `<description>Tweets from @${escapeXml(screenName)}</description>\n`
+  if (profileImage)
+    rss += `<image><url>${escapeXml(profileImage)}</url><title>${escapeXml(displayName)}</title><link>https://x.com/${escapeXml(screenName)}</link></image>\n`
+
+  for (const entry of entries.slice(0, RSS_ENTRY_LIMIT)) {
+    const { tweet } = entry.content
+    const link = `https://x.com${tweet.permalink}`
+    const pubDate = new Date(tweet.created_at).toUTCString()
+    rss += `<item>\n`
+    rss += `<title>${escapeXml(tweet.full_text.slice(0, 140))}</title>\n`
+    rss += `<link>${escapeXml(link)}</link>\n`
+    rss += `<guid>${escapeXml(link)}</guid>\n`
+    rss += `<pubDate>${pubDate}</pubDate>\n`
+    rss += `<description><![CDATA[${tweet.full_text}]]></description>\n`
+    rss += `<author>${escapeXml(displayName)}</author>\n`
+    rss += `</item>\n`
+  }
+
+  rss += `</channel>\n</rss>`
+  return rss
+}
+
+function escapeXml(s: string): string {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;")
+}
+
 export function rssProxyPlugin(): PluginOption {
   return {
     name: "rss-proxy",
@@ -137,6 +244,20 @@ export function rssProxyPlugin(): PluginOption {
         }
 
         try {
+          // Built-in Twitter-to-RSS: intercept twitter/x.com URLs and finhot://twitter/ scheme
+          const twitterHandle = resolveTwitterScreenName(url)
+          if (twitterHandle) {
+            const xml = await fetchTwitterAsRss(twitterHandle)
+            const feedUrl = `finhot://twitter/${twitterHandle}`
+            const result = parseRssFeed(xml, feedUrl, limit ?? RSS_ENTRY_LIMIT)
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            })
+            res.end(JSON.stringify(result))
+            return
+          }
+
           const controller = new AbortController()
           const timeout = setTimeout(() => controller.abort(), RSS_FETCH_TIMEOUT_MS)
 
@@ -197,6 +318,57 @@ export function rssProxyPlugin(): PluginOption {
           }
           res.writeHead(502, { "Content-Type": "application/json" })
           res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /api/rss/proxy-html — Fetch raw HTML for feed auto-discovery ───
+      server.middlewares.use("/api/rss/proxy-html", async (req, res) => {
+        if (handleCors(req, res)) return
+
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+
+        const body = await readJsonBody(req)
+        const { url } = body as { url: string }
+
+        if (!url) {
+          res.writeHead(400, { "Content-Type": "text/plain" })
+          res.end("url is required")
+          return
+        }
+
+        try {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), RSS_FETCH_TIMEOUT_MS)
+
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: {
+              "User-Agent": "FinHot/0.1.4 (RSS Reader)",
+              Accept: "text/html, application/xhtml+xml, */*",
+            },
+          })
+          clearTimeout(timeout)
+
+          if (!response.ok) {
+            res.writeHead(response.status, { "Content-Type": "text/plain" })
+            res.end(`HTTP ${response.status}`)
+            return
+          }
+
+          const html = await response.text()
+          res.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(html)
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(502, { "Content-Type": "text/plain" })
+          res.end(message)
         }
       })
 
