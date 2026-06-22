@@ -204,6 +204,45 @@ async function sogouFetch(
         Referer: `https://${domain}/`,
       },
     })
+
+    // Accumulate new cookies from response to maintain full session state
+    const newCookies = res.headers.getSetCookie?.() ?? []
+    if (newCookies.length > 0) {
+      const existing = new Map(
+        cookies
+          .split("; ")
+          .filter(Boolean)
+          .map((kv) => {
+            const [k, ...rest] = kv.split("=")
+            return [k!, rest.join("=")] as [string, string]
+          }),
+      )
+      for (const c of newCookies) {
+        const kv = c.split(";")[0]
+        if (!kv) continue
+        const [k, ...rest] = kv.split("=")
+        if (k) existing.set(k, rest.join("="))
+      }
+      const merged = [...existing.entries()].map(([k, v]) => `${k}=${v}`).join("; ")
+      const cached = sogouSessions[domain]
+      if (cached) cached.cookies = merged
+    }
+
+    return await res.text()
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Fetch a URL without Sogou session cookies (for mp.weixin.qq.com articles). */
+async function plainFetch(url: string, timeoutMs = 6_000): Promise<string> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { "User-Agent": SOGOU_UA, Accept: "text/html" },
+    })
     return await res.text()
   } finally {
     clearTimeout(timer)
@@ -221,6 +260,29 @@ async function sogouFetch(
  * We fetch the intermediate page, parse the concatenated URL, then fetch the
  * real article to extract biz ID + nickname.
  */
+/** Resolve a single Sogou redirect link → article → biz ID + nickname. */
+async function resolveOneRedirect(rlink: string): Promise<ResolvedAccount | null> {
+  // Fetch the Sogou intermediate redirect page
+  const rpage = await sogouFetch(`https://weixin.sogou.com${rlink}`, {
+    timeoutMs: 6_000,
+    domain: "weixin.sogou.com",
+  })
+
+  // Parse actual article URL from JS string concatenation
+  const urlParts = [...rpage.matchAll(/url\s*\+=\s*'([^']*)'/g)].map((m) => m[1]!)
+  if (urlParts.length === 0) return null
+  const articleUrl = urlParts.join("")
+  if (!articleUrl.includes("mp.weixin.qq.com")) return null
+
+  // Fetch the real article page (plain fetch, no Sogou cookies/referer)
+  // Articles can be 3+ MB and take ~6-8s on a typical connection
+  const articleHtml = await plainFetch(articleUrl, 15_000)
+  const extracted = extractBizFromArticle(articleHtml)
+  if (!extracted) return null
+
+  return { bizId: extracted.bizId, nickname: extracted.nickname, articleUrl }
+}
+
 async function weixinSogouArticleSearch(
   name: string,
   nameLower: string,
@@ -232,49 +294,39 @@ async function weixinSogouArticleSearch(
   const redirectLinks = [...html.matchAll(/href="(\/link\?url=[^"]+)"/g)].map((m) => m[1]!)
   if (redirectLinks.length === 0) return null
 
+  // Process up to 3 redirects in PARALLEL, return on first exact match
   let bestMatch: ResolvedAccount | null = null
 
-  for (const rlink of redirectLinks.slice(0, 4)) {
-    try {
-      // Fetch the Sogou intermediate redirect page
-      const rpage = await sogouFetch(`https://weixin.sogou.com${rlink}`, {
-        timeoutMs: 6_000,
-        domain: "weixin.sogou.com",
-      })
+  return new Promise<ResolvedAccount | null>((resolve) => {
+    let pending = Math.min(redirectLinks.length, 3)
+    let resolved = false
 
-      // Parse actual article URL from JS string concatenation
-      const urlParts = [...rpage.matchAll(/url\s*\+=\s*'([^']*)'/g)].map((m) => m[1]!)
-      if (urlParts.length === 0) continue
-      const articleUrl = urlParts.join("")
-      if (!articleUrl.includes("mp.weixin.qq.com")) continue
-
-      // Fetch the real article page
-      const articleHtml = await sogouFetch(articleUrl, { timeoutMs: 6_000 })
-      const extracted = extractBizFromArticle(articleHtml)
-      if (!extracted) continue
-
-      const candidate: ResolvedAccount = {
-        bizId: extracted.bizId,
-        nickname: extracted.nickname,
-        articleUrl,
-      }
-
-      if (extracted.nickname.toLowerCase() === nameLower) return candidate
-
-      if (
-        !bestMatch &&
-        extracted.nickname &&
-        (extracted.nickname.toLowerCase().includes(nameLower) ||
-          nameLower.includes(extracted.nickname.toLowerCase()))
-      ) {
-        bestMatch = candidate
-      }
-    } catch {
-      continue
+    for (const rlink of redirectLinks.slice(0, 3)) {
+      resolveOneRedirect(rlink)
+        .then((result) => {
+          if (resolved) return
+          if (result) {
+            const nn = result.nickname.toLowerCase()
+            if (nn === nameLower) {
+              resolved = true
+              resolve(result)
+              return
+            }
+            if (!bestMatch && (nn.includes(nameLower) || nameLower.includes(nn))) {
+              bestMatch = result
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          pending--
+          if (!resolved && pending <= 0) {
+            resolved = true
+            resolve(bestMatch)
+          }
+        })
     }
-  }
-
-  return bestMatch
+  })
 }
 
 /**
@@ -298,7 +350,7 @@ async function sogouWebSearch(name: string, nameLower: string): Promise<Resolved
 
       for (const articleUrl of urls.slice(0, 3)) {
         try {
-          const articleHtml = await sogouFetch(articleUrl, { timeoutMs: 6_000 })
+          const articleHtml = await plainFetch(articleUrl, 6_000)
           const extracted = extractBizFromArticle(articleHtml)
           if (!extracted) continue
 
@@ -334,8 +386,8 @@ async function sogouWebSearch(name: string, nameLower: string): Promise<Resolved
 async function resolveWechatBizId(name: string): Promise<ResolvedAccount | null> {
   const nameLower = name.toLowerCase()
 
-  // Race against 10-second deadline for quick user feedback
-  const deadline = new Promise<null>((resolve) => setTimeout(() => resolve(null), 10_000))
+  // Race against 20-second deadline for quick user feedback
+  const deadline = new Promise<null>((resolve) => setTimeout(() => resolve(null), 20_000))
 
   const search = (async () => {
     // 1) Primary: weixin.sogou.com article search with redirect extraction
