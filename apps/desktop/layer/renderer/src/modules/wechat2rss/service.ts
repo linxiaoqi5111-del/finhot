@@ -44,28 +44,32 @@ const getConfig = (): Wechat2rssConfig | null => {
 
 export const isWechat2rssConfigured = (): boolean => getConfig() !== null
 
-const apiFetch = async <T>(path: string, options?: RequestInit): Promise<T> => {
+const apiFetch = async <T>(path: string, _options?: RequestInit): Promise<T> => {
   const config = getConfig()
   if (!config) {
     throw new Error("wechat2rss 未配置。请在设置 > 集成中填写服务地址和 Token。")
   }
 
   const sep = path.includes("?") ? "&" : "?"
-  const url = `${config.endpoint}${path}${sep}k=${encodeURIComponent(config.token)}`
+  const targetUrl = `${config.endpoint}${path}${sep}k=${encodeURIComponent(config.token)}`
 
-  const res = await fetch(url, {
-    ...options,
-    headers: {
-      Accept: "application/json",
-      ...options?.headers,
-    },
+  // Route through server-side proxy to bypass CORS restrictions.
+  // The wechat2rss service typically runs on a different port (e.g. localhost:8090)
+  // and does not set Access-Control-Allow-Origin headers.
+  const res = await fetch("/api/wechat2rss/proxy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: targetUrl }),
   })
 
   if (!res.ok) {
     throw new Error(`wechat2rss API error: HTTP ${res.status}`)
   }
 
-  const json = (await res.json()) as { err?: string; data?: unknown }
+  const json = (await res.json()) as { err?: string; error?: string; data?: unknown }
+  if (json.error) {
+    throw new Error(`wechat2rss: ${json.error}`)
+  }
   if (json.err) {
     throw new Error(`wechat2rss: ${json.err}`)
   }

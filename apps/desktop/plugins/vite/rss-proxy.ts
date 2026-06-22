@@ -437,6 +437,49 @@ export function rssProxyPlugin(): PluginOption {
           res.end(JSON.stringify({ error: message }))
         }
       })
+
+      // ─── /api/wechat2rss/proxy — Server-side proxy for wechat2rss API ───
+      // Bypasses CORS restrictions when the browser calls a local wechat2rss instance.
+      server.middlewares.use("/api/wechat2rss/proxy", async (req, res) => {
+        if (handleCors(req, res)) return
+
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+
+        const body = await readJsonBody(req)
+        const { url } = body as { url: string }
+
+        if (!url) {
+          res.writeHead(400, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "url is required" }))
+          return
+        }
+
+        try {
+          const controller = new AbortController()
+          const timeout = setTimeout(() => controller.abort(), RSS_FETCH_TIMEOUT_MS)
+
+          const response = await fetch(url, {
+            signal: controller.signal,
+            headers: { Accept: "application/json" },
+          })
+          clearTimeout(timeout)
+
+          const text = await response.text()
+          res.writeHead(response.status, {
+            "Content-Type": response.headers.get("content-type") ?? "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(text)
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(502, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
     },
   }
 }
