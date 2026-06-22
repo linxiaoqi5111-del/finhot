@@ -20,6 +20,7 @@ import {
   addAccountById,
   addAccountByUrl,
   isWechat2rssConfigured,
+  resolveAccountByName,
   searchAccountsByName,
 } from "~/modules/wechat2rss/service"
 
@@ -112,7 +113,7 @@ interface WechatSearchResult {
   link: string
 }
 
-type SubscribeStatus = "idle" | "loading" | "success" | "error" | "discovering"
+type SubscribeStatus = "idle" | "loading" | "resolving" | "success" | "error" | "discovering"
 
 export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
   const [selectedPlatform, setSelectedPlatform] = useState<Platform>(PLATFORMS[0]!)
@@ -140,7 +141,7 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
     const isBizId = isWechatBizId(trimmed)
 
     if (!isUrl && !isBizId) {
-      // Name search: check existing subscriptions
+      // Name search: check existing subscriptions first
       const results = await searchAccountsByName(trimmed)
       if (results.length > 0) {
         setWechatSearchResults(results)
@@ -148,10 +149,42 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
         setStatus("idle")
         return null // Signal: show results instead of subscribing
       }
-      // No existing match — show search hint
+
+      // No existing match — try resolving name → biz ID via Sogou search
+      setStatus("resolving")
+      const resolved = await resolveAccountByName(trimmed)
+      if (resolved) {
+        // Found the account! Subscribe using the biz ID
+        const feedUrl = await addAccountById(resolved.bizId)
+        const preview = await previewLocalRssFeed({ url: feedUrl })
+        const feedData = preview.feed
+
+        await upsertLocalRssSubscription({
+          feed: { ...feedData, type: "feed" as const },
+          subscription: {
+            url: feedUrl,
+            view: FeedViewType.Articles,
+            category: "公众号",
+            isPrivate: false,
+            hideFromTimeline: null,
+            title: feedData.title || resolved.nickname || `公众号 - ${trimmed}`,
+            feedId: feedData.id,
+            listId: undefined,
+          },
+        })
+
+        return feedData.title || trimmed
+      }
+
+      // Resolution failed — show manual guidance
       setWechatSearchResults([])
       setShowWechatSearchHint(true)
       setStatus("idle")
+      window.open(
+        `https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(trimmed)}`,
+        "_blank",
+        "noopener,noreferrer",
+      )
       return null
     }
 
@@ -416,20 +449,25 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
 
       {/* WeChat name search hint — shown when no match in existing subscriptions */}
       {showWechatSearchHint && (
-        <div className="flex flex-col gap-2 rounded-md bg-fill-secondary px-3 py-2.5">
-          <p className="text-sm text-text-secondary">未在已订阅列表中找到该公众号。添加新订阅：</p>
-          <ol className="list-inside list-decimal space-y-1 text-xs text-text-tertiary">
-            <li>在微信中打开该公众号的任意文章</li>
-            <li>复制文章链接（形如 mp.weixin.qq.com/s/...）</li>
+        <div className="flex flex-col gap-2.5 rounded-md border border-orange/20 bg-orange/5 px-3 py-2.5">
+          <p className="text-sm font-medium text-text-secondary">
+            已在搜狗打开搜索结果，请完成以下步骤：
+          </p>
+          <ol className="list-inside list-decimal space-y-1.5 text-sm text-text-tertiary">
+            <li>在搜狗页面找到目标公众号的文章</li>
+            <li>
+              复制文章链接
+              <span className="text-text-quaternary"> （形如 mp.weixin.qq.com/s/...）</span>
+            </li>
             <li>粘贴到上方输入框，点击订阅</li>
           </ol>
           <a
-            href={`https://weixin.sogou.com/weixin?type=1&query=${encodeURIComponent(input)}`}
+            href={`https://weixin.sogou.com/weixin?type=2&query=${encodeURIComponent(input)}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-red hover:text-red/80"
+            className="inline-flex items-center gap-1 text-xs font-medium text-red hover:text-red/80"
           >
-            在搜狗搜索此公众号
+            重新打开搜索
             <svg className="size-3" viewBox="0 0 16 16" fill="currentColor">
               <path d="M8.22 2.97a.75.75 0 0 1 1.06 0l4.25 4.25a.75.75 0 0 1 0 1.06l-4.25 4.25a.75.75 0 0 1-1.06-1.06l2.97-2.97H3.75a.75.75 0 0 1 0-1.5h7.44L8.22 4.03a.75.75 0 0 1 0-1.06Z" />
             </svg>
@@ -479,22 +517,28 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
       <Button
         onClick={handleSubscribe}
         disabled={
-          !input.trim() || status === "loading" || status === "discovering" || isWechatUnconfigured
+          !input.trim() ||
+          status === "loading" ||
+          status === "resolving" ||
+          status === "discovering" ||
+          isWechatUnconfigured
         }
         buttonClassName="w-full bg-red text-white hover:bg-red/90 disabled:opacity-50"
       >
         {status === "loading"
           ? "订阅中..."
-          : status === "discovering"
-            ? "发现中..."
-            : selectedPlatform.useDiscovery
-              ? "发现订阅源"
-              : selectedPlatform.useWechat2rss &&
-                  input.trim() &&
-                  !isWechatUrl(input.trim()) &&
-                  !isWechatBizId(input.trim())
-                ? "搜索"
-                : "订阅"}
+          : status === "resolving"
+            ? "正在搜索公众号..."
+            : status === "discovering"
+              ? "发现中..."
+              : selectedPlatform.useDiscovery
+                ? "发现订阅源"
+                : selectedPlatform.useWechat2rss &&
+                    input.trim() &&
+                    !isWechatUrl(input.trim()) &&
+                    !isWechatBizId(input.trim())
+                  ? "搜索"
+                  : "订阅"}
       </Button>
     </div>
   )

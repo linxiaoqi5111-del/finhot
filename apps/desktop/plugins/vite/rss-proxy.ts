@@ -99,6 +99,146 @@ async function readJsonBody(req: any): Promise<any> {
   return JSON.parse(Buffer.concat(chunks).toString("utf-8"))
 }
 
+const SOGOU_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+/**
+ * Resolve a WeChat public account name to its numeric biz ID.
+ *
+ * Pipeline:
+ *  1. Sogou web search → temporary mp.weixin.qq.com article URLs
+ *  2. Fetch article page → extract `var biz = "..."` (base64)
+ *  3. Decode base64 → numeric biz ID
+ */
+interface ResolvedAccount {
+  bizId: string
+  nickname: string
+  articleUrl: string
+}
+
+/** Extract biz ID and nickname from a WeChat article HTML page. */
+function extractBizFromArticle(html: string): { bizId: string; nickname: string } | null {
+  // Extract biz from `var biz = "MzYyMjU1NzM2OQ=="` pattern
+  let bizId: string | null = null
+
+  const bizMatch = /var\s+biz\s*=\s*["']([A-Za-z0-9=+/]+)["']/.exec(html)
+  if (bizMatch) {
+    const decoded = Buffer.from(bizMatch[1]!, "base64").toString("utf-8")
+    if (/^\d+$/.test(decoded)) bizId = decoded
+  }
+
+  // Fallback: __biz parameter
+  if (!bizId) {
+    const bizParam = /__biz=([A-Za-z0-9=+/]+)/.exec(html)
+    if (bizParam) {
+      const decoded = Buffer.from(bizParam[1]!, "base64").toString("utf-8")
+      if (/^\d+$/.test(decoded)) bizId = decoded
+    }
+  }
+
+  if (!bizId) return null
+
+  // Extract nickname: var nickname = htmlDecode("xxx") or var nickname = "xxx"
+  let nickname = ""
+  const nnMatch = /var\s+nickname\s*=\s*(?:htmlDecode\()?["']([^"']+)["']/.exec(html)
+  if (nnMatch) nickname = nnMatch[1]!
+  // Fallback: js_name element
+  if (!nickname) {
+    const jsName = /id=["']js_name["'][^>]*>\s*([^<\n]+)/.exec(html)
+    if (jsName) nickname = jsName[1]!.trim()
+  }
+
+  return { bizId, nickname }
+}
+
+/** Fetch a Sogou web search page and extract mp.weixin.qq.com article URLs. */
+async function sogouSearchArticleUrls(query: string): Promise<string[]> {
+  const searchUrl = `https://www.sogou.com/web?query=${encodeURIComponent(query)}`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 15_000)
+  try {
+    const res = await fetch(searchUrl, {
+      signal: controller.signal,
+      headers: { "User-Agent": SOGOU_UA, Accept: "text/html" },
+    })
+    const html = await res.text()
+    const decoded = html.replaceAll("&amp;", "&").replaceAll("&lt;", "<").replaceAll("&gt;", ">")
+    return Array.from(
+      new Set(
+        [...decoded.matchAll(/https?:\/\/mp\.weixin\.qq\.com\/s\?[^"<>\s]+/g)].map((m) => m[0]),
+      ),
+    )
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Check a batch of article URLs for a matching account nickname. */
+async function findMatchingAccount(
+  articleUrls: string[],
+  nameLower: string,
+): Promise<ResolvedAccount | null> {
+  let bestMatch: ResolvedAccount | null = null
+
+  for (const articleUrl of articleUrls.slice(0, 5)) {
+    try {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 15_000)
+      const res = await fetch(articleUrl, {
+        signal: controller.signal,
+        headers: { "User-Agent": SOGOU_UA, Accept: "text/html" },
+        redirect: "follow",
+      })
+      clearTimeout(timer)
+
+      const extracted = extractBizFromArticle(await res.text())
+      if (!extracted) continue
+
+      const candidate: ResolvedAccount = {
+        bizId: extracted.bizId,
+        nickname: extracted.nickname,
+        articleUrl,
+      }
+
+      if (extracted.nickname.toLowerCase() === nameLower) return candidate
+
+      if (
+        !bestMatch &&
+        extracted.nickname &&
+        (extracted.nickname.toLowerCase().includes(nameLower) ||
+          nameLower.includes(extracted.nickname.toLowerCase()))
+      ) {
+        bestMatch = candidate
+      }
+    } catch {
+      continue
+    }
+  }
+
+  return bestMatch
+}
+
+async function resolveWechatBizId(name: string): Promise<ResolvedAccount | null> {
+  const nameLower = name.toLowerCase()
+
+  // Try multiple search query strategies; stop as soon as one yields a match
+  const queries = [`"${name}" site:mp.weixin.qq.com`, `${name} 微信公众号 site:mp.weixin.qq.com`]
+
+  for (const query of queries) {
+    try {
+      const urls = await sogouSearchArticleUrls(query)
+      if (urls.length === 0) continue
+
+      const match = await findMatchingAccount(urls, nameLower)
+      if (match) return match
+    } catch {
+      continue
+    }
+  }
+
+  return null
+}
+
 /** CORS preflight helper */
 function handleCors(req: any, res: any): boolean {
   if (req.method === "OPTIONS") {
@@ -431,6 +571,56 @@ export function rssProxyPlugin(): PluginOption {
             "Access-Control-Allow-Origin": "*",
           })
           res.end(JSON.stringify({ url, content, source: "defuddle" }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(502, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /api/wechat2rss/resolve-name — Resolve account name → biz ID ───
+      // Searches Sogou for articles, extracts biz from the article page JS.
+      server.middlewares.use("/api/wechat2rss/resolve-name", async (req, res) => {
+        if (handleCors(req, res)) return
+
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+
+        const body = await readJsonBody(req)
+        const { name } = body as { name: string }
+
+        if (!name) {
+          res.writeHead(400, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "name is required" }))
+          return
+        }
+
+        try {
+          const result = await resolveWechatBizId(name)
+          if (!result) {
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            })
+            res.end(JSON.stringify({ found: false }))
+            return
+          }
+
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(
+            JSON.stringify({
+              found: true,
+              bizId: result.bizId,
+              nickname: result.nickname,
+              articleUrl: result.articleUrl,
+            }),
+          )
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : "Unknown error"
           res.writeHead(502, { "Content-Type": "application/json" })

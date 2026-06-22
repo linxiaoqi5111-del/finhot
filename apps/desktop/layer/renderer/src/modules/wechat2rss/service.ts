@@ -138,6 +138,40 @@ export const searchAccountsByName = async (name: string): Promise<Wechat2rssList
   return res.data || []
 }
 
+interface ResolveNameResponse {
+  found: boolean
+  bizId?: string
+  nickname?: string
+  articleUrl?: string
+  error?: string
+}
+
+/**
+ * Resolve a WeChat public account name to its numeric biz ID.
+ * Uses the server-side proxy which searches Sogou and extracts biz from article pages.
+ */
+export const resolveAccountByName = async (
+  name: string,
+): Promise<{ bizId: string; nickname: string; articleUrl: string } | null> => {
+  const res = await fetch("/api/wechat2rss/resolve-name", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  })
+
+  if (!res.ok) {
+    throw new Error(`Name resolution failed: HTTP ${res.status}`)
+  }
+
+  const data = (await res.json()) as ResolveNameResponse
+  if (data.error) {
+    throw new Error(`Name resolution: ${data.error}`)
+  }
+
+  if (!data.found || !data.bizId) return null
+  return { bizId: data.bizId, nickname: data.nickname ?? name, articleUrl: data.articleUrl ?? "" }
+}
+
 /**
  * Build the RSS feed URL for a subscribed account.
  * Feed URLs do not need authentication.
