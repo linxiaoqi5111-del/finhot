@@ -259,22 +259,25 @@ async function findMatchingAccount(
 async function resolveWechatBizId(name: string): Promise<ResolvedAccount | null> {
   const nameLower = name.toLowerCase()
 
-  // Run multiple search queries in parallel for speed
-  const queries = [`"${name}" site:mp.weixin.qq.com`, `${name} 微信公众号 site:mp.weixin.qq.com`]
+  // Race the search against an 8-second deadline so the user gets quick feedback
+  const deadline = new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000))
 
-  const results = await Promise.allSettled(
-    queries.map(async (query) => {
-      const urls = await sogouSearchArticleUrls(query)
-      if (urls.length === 0) return null
-      return findMatchingAccount(urls, nameLower)
-    }),
-  )
+  const search = (async () => {
+    const queries = [`"${name}" site:mp.weixin.qq.com`, `${name} 微信公众号 site:mp.weixin.qq.com`]
+    const results = await Promise.allSettled(
+      queries.map(async (query) => {
+        const urls = await sogouSearchArticleUrls(query)
+        if (urls.length === 0) return null
+        return findMatchingAccount(urls, nameLower)
+      }),
+    )
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) return r.value
+    }
+    return null
+  })()
 
-  for (const r of results) {
-    if (r.status === "fulfilled" && r.value) return r.value
-  }
-
-  return null
+  return Promise.race([search, deadline])
 }
 
 /** CORS preflight helper */
