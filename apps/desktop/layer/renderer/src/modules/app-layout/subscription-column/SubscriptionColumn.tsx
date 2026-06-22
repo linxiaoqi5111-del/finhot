@@ -28,7 +28,6 @@ import { useI18n } from "~/hooks/common"
 import { AddBloggerButton } from "~/modules/add-blogger/AddBloggerButton"
 import { COMMAND_ID } from "~/modules/command/commands/id"
 import { useCommandBinding } from "~/modules/command/hooks/use-command-binding"
-import { HotwordPanel } from "~/modules/hotword/HotwordPanel"
 import { CornerPlayer } from "~/modules/player/corner-player"
 import { SubscriptionColumn } from "~/modules/subscription-column"
 import { removeEmptyFeedCategory, resetSelectedFeedIds } from "~/modules/subscription-column/atom"
@@ -95,8 +94,6 @@ export const SubscriptionColumnContainer = () => {
             <UpdateNotice />
 
             <AddBloggerButton />
-
-            <HotwordPanel />
           </SubscriptionColumn>
         </DndContext>
       </FeedResponsiveResizerContainer>

@@ -15,7 +15,6 @@ import { getI18n } from "~/i18n"
 import { EnvironmentIndicator } from "~/modules/app/EnvironmentIndicator"
 import { DebugRegistry } from "~/modules/debug/registry"
 import { EntriesProvider } from "~/modules/entry-column/context/EntriesContext"
-import { useHotwordProcessor } from "~/modules/hotword/useHotwordProcessor"
 import { CmdF } from "~/modules/panel/cmdf"
 import { SearchCmdK } from "~/modules/panel/cmdk"
 import { CmdNTrigger } from "~/modules/panel/cmdn"
@@ -137,9 +136,6 @@ const FINHOT_ONBOARDING_KEY = "finhot:onboarding:completed"
 
 export function MainDestopLayout() {
   const containerRef = useRef<HTMLDivElement | null>(null)
-
-  // Initialize hotword engine (periodic snapshot refresh)
-  useHotwordProcessor()
 
   // FinHot onboarding: show on first launch
   useEffect(() => {

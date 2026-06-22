@@ -23,7 +23,6 @@ import {
   triggerEntryEnrichmentFromIngest,
   triggerEntryRankFromIngest,
 } from "~/modules/entry-enrichment/trigger"
-import { processEntriesForHotwords } from "~/modules/hotword/feed-integration"
 
 import { isSupportedLocalRssUrl, LOCAL_RSS_URL_MESSAGE } from "./url"
 
@@ -385,16 +384,6 @@ export async function refreshLocalRssFeed(
   }
   await entryActions.upsertMany(actionResult.entries)
   const ingestedEntryIds = actionResult.entries.map((entry) => entry.id)
-
-  // Feed entries to hotword engine for term extraction
-  processEntriesForHotwords(
-    actionResult.entries.map((e) => ({
-      id: e.id,
-      title: e.title ?? null,
-      description: e.description ?? null,
-      content: e.content ?? null,
-    })),
-  )
 
   if (isInitialSubscription && initialUnreadIds) {
     // Only enrich the newest entries that are kept unread; skip AI for the entire backlog.
