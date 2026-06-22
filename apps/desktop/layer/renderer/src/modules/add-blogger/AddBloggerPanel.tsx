@@ -20,6 +20,7 @@ import {
   addAccountById,
   addAccountByUrl,
   isWechat2rssConfigured,
+  resolveAccountByName,
   searchAccountsByName,
 } from "~/modules/wechat2rss/service"
 
@@ -140,7 +141,7 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
     const isBizId = isWechatBizId(trimmed)
 
     if (!isUrl && !isBizId) {
-      // Name search: check existing subscriptions
+      // Name search: check existing subscriptions first
       const results = await searchAccountsByName(trimmed)
       if (results.length > 0) {
         setWechatSearchResults(results)
@@ -148,7 +149,33 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
         setStatus("idle")
         return null // Signal: show results instead of subscribing
       }
-      // No existing match — open Sogou WeChat search and show paste hint
+
+      // No existing match — try resolving name → biz ID via Sogou search
+      const resolved = await resolveAccountByName(trimmed)
+      if (resolved) {
+        // Found the account! Subscribe using the biz ID
+        const feedUrl = await addAccountById(resolved.bizId)
+        const preview = await previewLocalRssFeed({ url: feedUrl })
+        const feedData = preview.feed
+
+        await upsertLocalRssSubscription({
+          feed: { ...feedData, type: "feed" as const },
+          subscription: {
+            url: feedUrl,
+            view: FeedViewType.Articles,
+            category: "公众号",
+            isPrivate: false,
+            hideFromTimeline: null,
+            title: feedData.title || `公众号 - ${trimmed}`,
+            feedId: feedData.id,
+            listId: undefined,
+          },
+        })
+
+        return feedData.title || trimmed
+      }
+
+      // Resolution failed — show manual guidance
       setWechatSearchResults([])
       setShowWechatSearchHint(true)
       setStatus("idle")

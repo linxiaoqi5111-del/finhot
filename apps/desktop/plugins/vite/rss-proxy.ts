@@ -99,6 +99,93 @@ async function readJsonBody(req: any): Promise<any> {
   return JSON.parse(Buffer.concat(chunks).toString("utf-8"))
 }
 
+const SOGOU_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+/**
+ * Resolve a WeChat public account name to its numeric biz ID.
+ *
+ * Pipeline:
+ *  1. Sogou web search → temporary mp.weixin.qq.com article URLs
+ *  2. Fetch article page → extract `var biz = "..."` (base64)
+ *  3. Decode base64 → numeric biz ID
+ */
+async function resolveWechatBizId(
+  name: string,
+): Promise<{ bizId: string; articleUrl: string } | null> {
+  const query = encodeURIComponent(`"${name}" site:mp.weixin.qq.com`)
+  const searchUrl = `https://www.sogou.com/web?query=${query}`
+
+  const controller1 = new AbortController()
+  const t1 = setTimeout(() => controller1.abort(), 15_000)
+
+  let searchHtml: string
+  try {
+    const searchRes = await fetch(searchUrl, {
+      signal: controller1.signal,
+      headers: { "User-Agent": SOGOU_UA, Accept: "text/html" },
+    })
+    searchHtml = await searchRes.text()
+  } finally {
+    clearTimeout(t1)
+  }
+
+  // Unescape HTML entities and extract mp.weixin.qq.com article URLs
+  const decoded = searchHtml
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">")
+  const articleUrls = Array.from(
+    new Set(
+      [...decoded.matchAll(/https?:\/\/mp\.weixin\.qq\.com\/s\?[^"<>\s]+/g)].map((m) => m[0]),
+    ),
+  )
+
+  if (articleUrls.length === 0) return null
+
+  // Try each article URL until we extract a biz ID
+  for (const articleUrl of articleUrls.slice(0, 3)) {
+    try {
+      const controller2 = new AbortController()
+      const t2 = setTimeout(() => controller2.abort(), 15_000)
+
+      const articleRes = await fetch(articleUrl, {
+        signal: controller2.signal,
+        headers: { "User-Agent": SOGOU_UA, Accept: "text/html" },
+        redirect: "follow",
+      })
+      clearTimeout(t2)
+
+      const articleHtml = await articleRes.text()
+
+      // Extract biz from `var biz = "MzYyMjU1NzM2OQ=="` pattern
+      const bizMatch = /var\s+biz\s*=\s*["']([A-Za-z0-9=+/]+)["']/.exec(articleHtml)
+      if (bizMatch) {
+        const bizB64 = bizMatch[1]!
+        const bizId = Buffer.from(bizB64, "base64").toString("utf-8")
+        if (/^\d+$/.test(bizId)) {
+          return { bizId, articleUrl }
+        }
+      }
+
+      // Fallback: look for __biz parameter in URLs on the page
+      const bizParam = /__biz=([A-Za-z0-9=+/]+)/.exec(articleHtml)
+      if (bizParam) {
+        const bizB64 = bizParam[1]!
+        const bizId = Buffer.from(bizB64, "base64").toString("utf-8")
+        if (/^\d+$/.test(bizId)) {
+          return { bizId, articleUrl }
+        }
+      }
+    } catch {
+      // Try next URL
+      continue
+    }
+  }
+
+  return null
+}
+
 /** CORS preflight helper */
 function handleCors(req: any, res: any): boolean {
   if (req.method === "OPTIONS") {
@@ -431,6 +518,55 @@ export function rssProxyPlugin(): PluginOption {
             "Access-Control-Allow-Origin": "*",
           })
           res.end(JSON.stringify({ url, content, source: "defuddle" }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(502, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /api/wechat2rss/resolve-name — Resolve account name → biz ID ───
+      // Searches Sogou for articles, extracts biz from the article page JS.
+      server.middlewares.use("/api/wechat2rss/resolve-name", async (req, res) => {
+        if (handleCors(req, res)) return
+
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+
+        const body = await readJsonBody(req)
+        const { name } = body as { name: string }
+
+        if (!name) {
+          res.writeHead(400, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "name is required" }))
+          return
+        }
+
+        try {
+          const result = await resolveWechatBizId(name)
+          if (!result) {
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            })
+            res.end(JSON.stringify({ found: false }))
+            return
+          }
+
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(
+            JSON.stringify({
+              found: true,
+              bizId: result.bizId,
+              articleUrl: result.articleUrl,
+            }),
+          )
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : "Unknown error"
           res.writeHead(502, { "Content-Type": "application/json" })
