@@ -441,87 +441,6 @@ function resolveTwitterScreenName(url: string): string | null {
   return null
 }
 
-const TWITTER_SYNDICATION_BASE = "https://syndication.twitter.com/srv/timeline-profile/screen-name"
-
-async function fetchTwitterAsRss(screenName: string): Promise<string> {
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), RSS_FETCH_TIMEOUT_MS)
-
-  const response = await fetch(`${TWITTER_SYNDICATION_BASE}/${screenName}`, {
-    signal: controller.signal,
-    headers: { "User-Agent": "Mozilla/5.0 (compatible; FinHot/0.1.4)" },
-  })
-  clearTimeout(timeout)
-
-  if (!response.ok) {
-    throw new Error(`Twitter syndication HTTP ${response.status}`)
-  }
-
-  const html = await response.text()
-  const dataMatch =
-    /<script[^>]*id="__NEXT_DATA__"[^>]*type="application\/json">([\s\S]*?)<\/script>/.exec(html)
-  if (!dataMatch) throw new Error("Failed to parse Twitter syndication response")
-
-  const data = JSON.parse(dataMatch[1]!) as {
-    props: {
-      pageProps: {
-        timeline: {
-          entries: Array<{
-            type: string
-            content: {
-              tweet: {
-                full_text: string
-                created_at: string
-                id_str: string
-                permalink: string
-                user: { screen_name: string; name: string; profile_image_url_https: string }
-              }
-            }
-          }>
-        }
-      }
-    }
-  }
-
-  const entries = data.props.pageProps.timeline.entries.filter((e) => e.type === "tweet")
-  const user = entries[0]?.content?.tweet?.user
-  const displayName = user?.name ?? screenName
-  const profileImage = user?.profile_image_url_https ?? ""
-
-  let rss = `<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0">\n<channel>\n`
-  rss += `<title>${escapeXml(displayName)} (@${escapeXml(screenName)})</title>\n`
-  rss += `<link>https://x.com/${escapeXml(screenName)}</link>\n`
-  rss += `<description>Tweets from @${escapeXml(screenName)}</description>\n`
-  if (profileImage)
-    rss += `<image><url>${escapeXml(profileImage)}</url><title>${escapeXml(displayName)}</title><link>https://x.com/${escapeXml(screenName)}</link></image>\n`
-
-  for (const entry of entries.slice(0, RSS_ENTRY_LIMIT)) {
-    const { tweet } = entry.content
-    const link = `https://x.com${tweet.permalink}`
-    const pubDate = new Date(tweet.created_at).toUTCString()
-    rss += `<item>\n`
-    rss += `<title>${escapeXml(tweet.full_text.slice(0, 140))}</title>\n`
-    rss += `<link>${escapeXml(link)}</link>\n`
-    rss += `<guid>${escapeXml(link)}</guid>\n`
-    rss += `<pubDate>${pubDate}</pubDate>\n`
-    rss += `<description><![CDATA[${tweet.full_text}]]></description>\n`
-    rss += `<author>${escapeXml(displayName)}</author>\n`
-    rss += `</item>\n`
-  }
-
-  rss += `</channel>\n</rss>`
-  return rss
-}
-
-function escapeXml(s: string): string {
-  return s
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-}
-
 export function rssProxyPlugin(): PluginOption {
   return {
     name: "rss-proxy",
@@ -546,10 +465,19 @@ export function rssProxyPlugin(): PluginOption {
         }
 
         try {
-          // Built-in Twitter-to-RSS: intercept twitter/x.com URLs and finhot://twitter/ scheme
+          // Built-in Twitter-to-RSS: use local RSSHub Docker for Twitter feeds
           const twitterHandle = resolveTwitterScreenName(url)
           if (twitterHandle) {
-            const xml = await fetchTwitterAsRss(twitterHandle)
+            const rsshubUrl = `http://localhost:1200/twitter/user/${twitterHandle}`
+            const controller = new AbortController()
+            const timeout = setTimeout(() => controller.abort(), RSS_FETCH_TIMEOUT_MS)
+            const rsshubRes = await fetch(rsshubUrl, {
+              signal: controller.signal,
+              headers: { Accept: "application/rss+xml, application/xml, text/xml" },
+            })
+            clearTimeout(timeout)
+            if (!rsshubRes.ok) throw new Error(`RSSHub Twitter HTTP ${rsshubRes.status}`)
+            const xml = await rsshubRes.text()
             const feedUrl = `finhot://twitter/${twitterHandle}`
             const result = parseRssFeed(xml, feedUrl, limit ?? RSS_ENTRY_LIMIT)
             res.writeHead(200, {
