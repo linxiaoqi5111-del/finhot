@@ -56,12 +56,14 @@ const PLATFORMS: Platform[] = [
     id: "twitter",
     label: "X / Twitter",
     icon: "⚫",
-    placeholder: "粘贴 RSS 链接 或 输入用户名（需 RSSHub 配置 Cookie）",
-    hint: "推荐：在 rssxgo.com 关注用户后粘贴 RSS 链接；或输入用户名走 RSSHub",
+    placeholder: "输入用户名、X 链接 或 RSS 链接",
+    hint: "支持：用户名（elonmusk）、X 链接（https://x.com/elonmusk）、XGo RSS 链接",
     buildUrl: (input: string) => {
       const trimmed = input.trim()
-      if (trimmed.startsWith("http")) return trimmed
-      return `${LOCAL_RSSHUB_BASE}/twitter/user/${trimmed.replace(/^@/, "")}`
+      if (trimmed.includes("api.xgo.ing/") || trimmed.includes("/rss")) return trimmed
+      const xUrlMatch = /(?:x\.com|twitter\.com)\/(\w+)\/?$/.exec(trimmed)
+      const handle = xUrlMatch ? xUrlMatch[1] : trimmed.replace(/^@/, "")
+      return `https://nt.vern.cc/${handle}/rss`
     },
   },
   {
