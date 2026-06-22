@@ -52,7 +52,7 @@ const PLATFORMS: Platform[] = [
     icon: "🟡",
     placeholder: "输入用户 UID（如 6784593966）",
     hint: "xueqiu.com/u/xxx 中的数字",
-    buildUrl: (uid: string) => `${LOCAL_RSSHUB_BASE}/xueqiu/user/${uid.trim()}`,
+    buildUrl: (uid: string) => `finhot://xueqiu/${uid.trim()}`,
   },
   {
     id: "twitter",

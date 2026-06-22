@@ -6,6 +6,7 @@
  * - `/api/jina/read` — Jina Reader fallback for content extraction
  * - `/api/defuddle/read` — Defuddle content extraction (markdown)
  */
+import { execFile } from "node:child_process"
 import crypto from "node:crypto"
 
 import type { PluginOption } from "vite"
@@ -415,6 +416,135 @@ function handleCors(req: any, res: any): boolean {
   return false
 }
 
+// ─── Xueqiu scraper via Playwright (WAF bypass) ───
+// Xueqiu uses Aliyun WAF that blocks all non-browser HTTP clients.
+// We spawn a headful Chrome via Playwright to solve the WAF challenge,
+// then fetch the user timeline API from within the browser context.
+
+const xueqiuCache = new Map<string, { data: any; expiry: number }>()
+const XUEQIU_CACHE_TTL = 30 * 60_000 // 30 minutes
+
+function resolveXueqiuUserId(url: string): string | null {
+  // finhot://xueqiu/{userId}
+  const finhotMatch = /^finhot:\/\/xueqiu\/(\d+)$/.exec(url)
+  if (finhotMatch) return finhotMatch[1]!
+
+  // https://xueqiu.com/u/{userId}
+  try {
+    const parsed = new URL(url)
+    if (parsed.hostname === "xueqiu.com") {
+      const seg = parsed.pathname.match(/^\/u\/(\d+)/)
+      if (seg) return seg[1]!
+    }
+  } catch {
+    /* not a URL */
+  }
+
+  return null
+}
+
+async function fetchXueqiuTimeline(
+  userId: string,
+): Promise<{ statuses: any[]; screenName: string }> {
+  const cached = xueqiuCache.get(userId)
+  if (cached && Date.now() < cached.expiry) return cached.data
+
+  const scraperPath = resolve(import.meta.dirname, "xueqiu-scraper.mjs")
+  const result = await new Promise<string>((resolve, reject) => {
+    execFile(
+      "node",
+      [scraperPath, userId],
+      {
+        timeout: 60_000,
+        maxBuffer: 5 * 1024 * 1024,
+        env: { ...process.env, NODE_PATH: resolve(import.meta.dirname, "../../node_modules") },
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          reject(new Error(stderr || error.message))
+        } else {
+          resolve(stdout)
+        }
+      },
+    )
+  })
+
+  const parsed = JSON.parse(result)
+  const data = {
+    statuses: parsed.statuses ?? [],
+    screenName: parsed.screenName ?? userId,
+  }
+  xueqiuCache.set(userId, { data, expiry: Date.now() + XUEQIU_CACHE_TTL })
+  return data
+}
+
+function xueqiuTimelineToFeed(userId: string, screenName: string, statuses: any[], limit: number) {
+  const feedUrl = `finhot://xueqiu/${userId}`
+  const feedId = generateId(feedUrl)
+
+  const feed = {
+    id: feedId,
+    title: `${screenName} - 雪球`,
+    url: feedUrl,
+    description: `雪球用户 ${screenName} 的动态`,
+    image: null,
+    errorAt: null,
+    siteUrl: `https://xueqiu.com/u/${userId}`,
+    ownerUserId: null,
+    errorMessage: null,
+    subscriptionCount: null,
+    updatesPerWeek: null,
+    latestEntryPublishedAt: null,
+    tipUserIds: null as string[] | null,
+    updatedAt: new Date().toISOString(),
+  }
+
+  const entries = statuses.slice(0, limit).map((s: any) => {
+    const title =
+      s.title || (s.description ? stripHtml(s.description).slice(0, 80) : `动态 ${s.id}`)
+    const link = `https://xueqiu.com${s.target || `/${userId}/${s.id}`}`
+    const content = s.text || s.description || ""
+    const publishedAt = s.created_at
+      ? new Date(s.created_at).toISOString()
+      : new Date().toISOString()
+    const entryId = generateId(`${feedUrl}::${s.id}`)
+
+    let retweetBlock = ""
+    if (s.retweeted_status) {
+      const rt = s.retweeted_status
+      retweetBlock = `<blockquote>${rt.user?.screen_name ?? ""}: ${rt.description ?? ""}</blockquote>`
+    }
+
+    return {
+      id: entryId,
+      title: title || null,
+      url: link,
+      content: stripHtml(content + retweetBlock),
+      readabilityContent: null,
+      readabilityUpdatedAt: null,
+      description: stripHtml(content).slice(0, 300) || null,
+      guid: String(s.id),
+      author: screenName,
+      authorUrl: `https://xueqiu.com/u/${userId}`,
+      authorAvatar: null,
+      insertedAt: new Date().toISOString(),
+      publishedAt,
+      media: null,
+      categories: null,
+      attachments: null,
+      extra: null,
+      language: "zh-CN",
+      feedId,
+      inboxHandle: null,
+      read: false,
+      sources: null,
+      settings: null,
+    }
+  })
+
+  return { feed, entries }
+}
+
 /**
  * Resolve a URL that should be handled by the built-in Twitter-to-RSS converter.
  * Returns the Twitter screen_name if matched, null otherwise.
@@ -465,6 +595,31 @@ export function rssProxyPlugin(): PluginOption {
         }
 
         try {
+          // Built-in Xueqiu scraper: bypass WAF via headful Playwright
+          const xueqiuUserId = resolveXueqiuUserId(url)
+          if (xueqiuUserId) {
+            try {
+              const { statuses, screenName } = await fetchXueqiuTimeline(xueqiuUserId)
+              const result = xueqiuTimelineToFeed(
+                xueqiuUserId,
+                screenName,
+                statuses,
+                limit ?? RSS_ENTRY_LIMIT,
+              )
+              res.writeHead(200, {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+              })
+              res.end(JSON.stringify(result))
+              return
+            } catch (xqError: unknown) {
+              const xqMsg = xqError instanceof Error ? xqError.message : "Xueqiu fetch failed"
+              res.writeHead(502, { "Content-Type": "application/json" })
+              res.end(JSON.stringify({ error: xqMsg }))
+              return
+            }
+          }
+
           // Built-in Twitter-to-RSS: use local RSSHub Docker for Twitter feeds
           const twitterHandle = resolveTwitterScreenName(url)
           if (twitterHandle) {
