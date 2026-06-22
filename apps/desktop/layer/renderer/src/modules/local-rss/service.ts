@@ -8,6 +8,7 @@ import { entryActions, entrySyncServices, useEntryStore } from "@follow/store/en
 import { getFeedByIdOrUrl } from "@follow/store/feed/getter"
 import { feedActions } from "@follow/store/feed/store"
 import type { FeedModel } from "@follow/store/feed/types"
+import { getSubscriptionByFeedId } from "@follow/store/subscription/getter"
 import { subscriptionActions, useSubscriptionStore } from "@follow/store/subscription/store"
 import type { SubscriptionForm } from "@follow/store/subscription/types"
 import { inferSubscriptionViewFromFeed } from "@follow/store/subscription/utils"
