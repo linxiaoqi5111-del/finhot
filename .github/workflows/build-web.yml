@@ -1,0 +1,45 @@
+on:
+  pull_request:
+  push:
+    branches: [main, dev]
+
+name: 🌐 CI Build Desktop Web
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-web
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev' }}
+jobs:
+  build:
+    name: Build desktop web
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [lts/*]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          lfs: true
+      - name: Cache turbo build setup
+        uses: actions/cache@v5
+        with:
+          path: .turbo
+          key: ${{ runner.os }}-turbo-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-
+
+      - name: Checkout LFS objects
+        run: git lfs checkout
+
+      - uses: pnpm/action-setup@v6
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "pnpm"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --child-concurrency=1
+      - name: Build desktop web
+        run: |
+          npm exec turbo run FinHot#build:web

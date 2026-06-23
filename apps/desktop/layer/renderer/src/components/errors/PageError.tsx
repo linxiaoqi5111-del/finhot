@@ -1,0 +1,46 @@
+import { Button } from "@follow/components/ui/button/index.js"
+import type { FC } from "react"
+import { useTranslation } from "react-i18next"
+
+import { attachOpenInEditor } from "~/lib/dev"
+
+import type { AppErrorFallbackProps } from "../common/AppErrorBoundary"
+import { FeedbackIssue } from "../common/ErrorElement"
+import { parseError, useResetErrorWhenRouteChange } from "./helper"
+
+const PageErrorFallback: FC<AppErrorFallbackProps> = (props) => {
+  const { t } = useTranslation("common")
+  const { message, stack } = parseError(props.error)
+  useResetErrorWhenRouteChange(props.resetError)
+  return (
+    <div className="pointer-events-auto flex w-full flex-col items-center justify-center rounded-md bg-theme-background p-2">
+      <div className="m-auto max-w-prose text-center">
+        <div className="mb-4">
+          <i className="i-focal-bug text-4xl text-red-500" />
+        </div>
+        <div className="text-lg font-bold">{message}</div>
+        {import.meta.env.DEV && stack ? (
+          <pre className="mt-4 max-h-48 cursor-text select-text overflow-auto whitespace-pre-line rounded-md bg-red-50 p-4 text-left font-mono text-sm text-red-600">
+            {attachOpenInEditor(stack)}
+          </pre>
+        ) : null}
+
+        <p className="my-8">{t("error_screen.temporary_problem", { appName: APP_NAME })}</p>
+
+        <div className="center gap-4">
+          <Button onClick={() => props.resetError()} variant="primary">
+            {t("retry")}
+          </Button>
+
+          <Button onClick={() => window.location.reload()} variant="outline">
+            {t("error_screen.reload")}
+          </Button>
+        </div>
+
+        <FeedbackIssue message={message!} stack={stack} error={props.error} />
+      </div>
+    </div>
+  )
+}
+
+export default PageErrorFallback

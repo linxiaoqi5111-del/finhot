@@ -1,0 +1,570 @@
+import { FeedViewType } from "@follow/constants"
+import type { UnreadSchema } from "@follow/database/schemas/types"
+import { EntryService } from "@follow/database/services/entry"
+import { UnreadService } from "@follow/database/services/unread"
+import { LOCAL_RSS_MODE } from "@follow/shared/constants"
+import type { MarkAllAsReadRequest } from "@follow-app/client-sdk"
+import { isEqual } from "es-toolkit"
+
+import { api } from "../../context"
+import type { Hydratable, Resetable } from "../../lib/base"
+import { createTransaction, createZustandStore } from "../../lib/helper"
+import { behaviorEventSyncService } from "../behavior-event/store"
+import { getEntry } from "../entry/getter"
+import { entryActions } from "../entry/store"
+import { setFeedUnreadDirty } from "../feed/hooks"
+import { getListFeedIds } from "../list/getters"
+import { getSubscribedFeedIdAndInboxHandlesByView } from "../subscription/getter"
+import type {
+  FeedIdOrInboxHandle,
+  InsertedBeforeTimeRangeFilter,
+  PublishAtTimeRangeFilter,
+  UnreadState,
+  UnreadStoreModel,
+  UnreadUpdateOptions,
+} from "./types"
+
+const initialUnreadStore: UnreadState = {
+  data: {},
+}
+
+const READ_MARK_BATCH_WINDOW = 100
+const LOCAL_UNREAD_COUNT_PROTECTION_WINDOW = 30 * 1000
+
+export const useUnreadStore = createZustandStore<UnreadState>("unread")(() => initialUnreadStore)
+const get = useUnreadStore.getState
+const set = useUnreadStore.setState
+
+type ReadEntryTarget = {
+  entryId: string
+  id: FeedIdOrInboxHandle
+  isInbox: boolean
+}
+
+const countUnreadEntriesById = (entryIds: string[]): UnreadStoreModel => {
+  const unreadCountById: UnreadStoreModel = {}
+
+  for (const entryId of entryIds) {
+    const entry = getEntry(entryId)
+    const id = entry?.inboxHandle || entry?.feedId
+    if (!id) continue
+
+    unreadCountById[id] = (unreadCountById[id] || 0) + 1
+  }
+
+  return unreadCountById
+}
+
+class UnreadSyncService {
+  private queuedReadEntryIds = new Set<string>()
+  private queuedReadFlushPromise: Promise<void> | null = null
+  private localUnreadCountProtectionExpiresAt = new Map<FeedIdOrInboxHandle, number>()
+
+  private protectUnreadCounts(ids: FeedIdOrInboxHandle[]) {
+    const now = Date.now()
+    this.pruneUnreadCountProtection(now)
+
+    for (const id of ids) {
+      if (!id) continue
+      this.localUnreadCountProtectionExpiresAt.set(id, now + LOCAL_UNREAD_COUNT_PROTECTION_WINDOW)
+    }
+  }
+
+  private clearUnreadCountProtection(ids: FeedIdOrInboxHandle[]) {
+    for (const id of ids) {
+      this.localUnreadCountProtectionExpiresAt.delete(id)
+    }
+  }
+
+  private pruneUnreadCountProtection(now: number) {
+    for (const [id, expiresAt] of this.localUnreadCountProtectionExpiresAt.entries()) {
+      if (expiresAt <= now) {
+        this.localUnreadCountProtectionExpiresAt.delete(id)
+      }
+    }
+  }
+
+  private applyUnreadCountProtection(unreads: UnreadStoreModel) {
+    this.pruneUnreadCountProtection(Date.now())
+
+    if (this.localUnreadCountProtectionExpiresAt.size === 0) return unreads
+
+    const currentUnread = get().data
+    const nextUnread = { ...unreads }
+
+    for (const id of this.localUnreadCountProtectionExpiresAt.keys()) {
+      nextUnread[id] = currentUnread[id] ?? 0
+    }
+
+    return nextUnread
+  }
+
+  clearLocalUnreadCountProtectionInSession() {
+    this.localUnreadCountProtectionExpiresAt.clear()
+  }
+
+  async resetFromRemote() {
+    if (LOCAL_RSS_MODE) {
+      const unreads = await UnreadService.getUnreadAll()
+      await unreadActions.upsertMany(unreads, { reset: true })
+      return get().data
+    }
+
+    const res = await api().reads.get({})
+    const unreadData = this.applyUnreadCountProtection(res.data)
+
+    if (isEqual(unreadData, get().data)) {
+      return unreadData
+    }
+
+    await unreadActions.upsertMany(unreadData, { reset: true })
+    return unreadData
+  }
+
+  private async updateUnreadStatus({
+    ids,
+    time,
+    request,
+  }: {
+    ids: FeedIdOrInboxHandle[]
+    time?: PublishAtTimeRangeFilter | InsertedBeforeTimeRangeFilter
+    request: () => Promise<UnreadStoreModel>
+  }) {
+    if (!ids || ids.length === 0) return
+
+    const currentUnreadList = ids.map((id) => ({ id, count: get().data[id] || 0 }))
+    const currentUnreadById = Object.fromEntries(
+      currentUnreadList.map(({ id, count }) => [id, count]),
+    )
+    const newUnreadListWhenNoTimeFilter = ids.map((id) => ({ id, count: 0 }))
+
+    let affectedEntryIds: string[] = []
+    let newUnreadListWhenTimeFilter: typeof currentUnreadList = []
+    let localReadScopeProtectionToken: number | undefined
+
+    const tx = createTransaction<unknown, unknown, UnreadStoreModel>()
+
+    tx.store(() => {
+      this.protectUnreadCounts(ids)
+      localReadScopeProtectionToken = entryActions.protectLocalReadScopeInSession({ ids, time })
+      affectedEntryIds = entryActions.markEntryReadStatusInSession({
+        ids,
+        read: true,
+        time,
+      })
+
+      if (!time) {
+        unreadActions.upsertManyInSession(newUnreadListWhenNoTimeFilter)
+      } else {
+        const optimisticUnreadCountById = countUnreadEntriesById(affectedEntryIds)
+        newUnreadListWhenTimeFilter = ids.map((id) => ({
+          id,
+          count: Math.max(0, (currentUnreadById[id] || 0) - (optimisticUnreadCountById[id] || 0)),
+        }))
+        unreadActions.upsertManyInSession(newUnreadListWhenTimeFilter)
+      }
+    })
+
+    if (!LOCAL_RSS_MODE) {
+      tx.request(request)
+    }
+
+    tx.rollback(async () => {
+      this.clearUnreadCountProtection(ids)
+      entryActions.clearLocalReadScopeProtectionInSession(localReadScopeProtectionToken)
+      entryActions.markEntryReadStatusInSession({
+        entryIds: affectedEntryIds,
+        read: false,
+      })
+
+      unreadActions.upsertManyInSession(currentUnreadList)
+    })
+
+    tx.persist(async (_s, _c, res) => {
+      if (!time) {
+        await UnreadService.upsertMany(newUnreadListWhenNoTimeFilter)
+      } else {
+        if (res) {
+          const finalUnreadList = Array.from(new Set([...ids, ...Object.keys(res)])).map((id) => ({
+            id,
+            count: Math.max(0, (currentUnreadById[id] ?? get().data[id] ?? 0) - (res[id] || 0)),
+          }))
+          await unreadActions.upsertMany(finalUnreadList)
+        } else {
+          await UnreadService.upsertMany(newUnreadListWhenTimeFilter)
+        }
+      }
+
+      await EntryService.patchMany({
+        feedIds: ids,
+        entry: { read: true },
+        time,
+      })
+    })
+
+    ids.forEach((id) => {
+      if (id) {
+        setFeedUnreadDirty(id)
+      }
+    })
+
+    await tx.run()
+  }
+
+  async markBatchAsRead({
+    view,
+    filter,
+    time,
+    excludePrivate,
+  }: {
+    view: FeedViewType | undefined
+    filter?: {
+      feedId?: string
+      listId?: string
+      feedIdList?: string[]
+      inboxId?: string
+      insertedBefore?: number
+    } | null
+    time?: PublishAtTimeRangeFilter | InsertedBeforeTimeRangeFilter
+    excludePrivate: boolean
+  }) {
+    const request = async () => {
+      const args: MarkAllAsReadRequest = {
+        view: view === FeedViewType.All ? undefined : view,
+        excludePrivate,
+        ...filter,
+        ...time,
+      }
+      if (view === FeedViewType.All) {
+        delete args.view
+      }
+      const res = await api().reads.markAllAsRead(args)
+
+      return res.data.read
+    }
+
+    if (filter?.feedIdList) {
+      await this.updateUnreadStatus({ ids: filter.feedIdList, time, request })
+    } else if (filter?.feedId) {
+      await this.updateUnreadStatus({ ids: [filter.feedId], time, request })
+    } else if (filter?.listId) {
+      const feedIds = getListFeedIds(filter.listId)
+      if (feedIds && feedIds.length > 0) {
+        await this.updateUnreadStatus({ ids: feedIds, time, request })
+      }
+    } else if (filter?.inboxId) {
+      await this.updateUnreadStatus({ ids: [filter.inboxId], time, request })
+    } else {
+      const feedIdAndInboxHandles = getSubscribedFeedIdAndInboxHandlesByView({
+        view,
+        excludePrivate,
+        excludeHidden: true,
+      })
+      await this.updateUnreadStatus({ ids: feedIdAndInboxHandles, time, request })
+    }
+  }
+
+  async markViewAsRead(view: FeedViewType, excludePrivate: boolean) {
+    await this.markBatchAsRead({
+      view: view === FeedViewType.All ? undefined : view,
+      excludePrivate,
+    })
+  }
+
+  async markFeedAsRead(feedId: string | string[], time?: PublishAtTimeRangeFilter) {
+    const feedIds = Array.isArray(feedId) ? feedId : [feedId]
+
+    await this.markBatchAsRead({
+      view: undefined,
+      excludePrivate: false,
+      filter: {
+        feedIdList: feedIds,
+      },
+      time,
+    })
+  }
+
+  async markListAsRead(listId: string, time?: PublishAtTimeRangeFilter) {
+    await this.markBatchAsRead({
+      view: undefined,
+      excludePrivate: false,
+      filter: {
+        listId,
+      },
+      time,
+    })
+  }
+
+  private getReadEntryTargets(entryIds: string[]): ReadEntryTarget[] {
+    const seenEntryIds = new Set<string>()
+    const targets: ReadEntryTarget[] = []
+
+    for (const entryId of entryIds) {
+      if (seenEntryIds.has(entryId)) continue
+      seenEntryIds.add(entryId)
+
+      const entry = getEntry(entryId)
+      if (!entry || entry.read || (!entry.feedId && !entry.inboxHandle)) continue
+
+      targets.push({
+        entryId,
+        id: entry.inboxHandle || entry.feedId || "",
+        isInbox: !!entry.inboxHandle,
+      })
+    }
+
+    return targets
+  }
+
+  async markEntriesAsRead(entryIds: string[]) {
+    const targets = this.getReadEntryTargets(entryIds)
+    if (targets.length === 0) return
+
+    const targetEntryIds = targets.map((target) => target.entryId)
+    const unreadCountById = targets.reduce(
+      (acc, target) => {
+        acc[target.id] = (acc[target.id] || 0) + 1
+        return acc
+      },
+      {} as Record<FeedIdOrInboxHandle, number>,
+    )
+
+    const feedEntryIds = targets.filter((target) => !target.isInbox).map((target) => target.entryId)
+    const inboxEntryIds = targets.filter((target) => target.isInbox).map((target) => target.entryId)
+
+    const tx = createTransaction()
+    tx.store(() => {
+      entryActions.markEntryReadStatusInSession({ entryIds: targetEntryIds, read: true })
+      for (const [id, count] of Object.entries(unreadCountById)) {
+        unreadActions.removeUnread(id, count)
+      }
+    })
+
+    if (!LOCAL_RSS_MODE) {
+      tx.request(async () => {
+        if (feedEntryIds.length > 0) {
+          await api().reads.markAsRead({ entryIds: feedEntryIds, isInbox: false })
+        }
+        if (inboxEntryIds.length > 0) {
+          await api().reads.markAsRead({ entryIds: inboxEntryIds, isInbox: true })
+        }
+      })
+    }
+
+    tx.rollback(() => {
+      entryActions.markEntryReadStatusInSession({ entryIds: targetEntryIds, read: false })
+      for (const [id, count] of Object.entries(unreadCountById)) {
+        unreadActions.addUnread(id, count)
+      }
+    })
+
+    tx.persist(() => {
+      entryActions.markEntryReadStatusInSession({ entryIds: targetEntryIds, read: true })
+      return EntryService.patchMany({
+        entry: { read: true },
+        entryIds: targetEntryIds,
+      })
+    })
+
+    Object.keys(unreadCountById).forEach((id) => {
+      if (id) {
+        setFeedUnreadDirty(id)
+      }
+    })
+
+    await tx.run()
+
+    if (LOCAL_RSS_MODE) {
+      for (const entryId of targetEntryIds) {
+        void behaviorEventSyncService.recordReadComplete(entryId)
+      }
+    }
+  }
+
+  queueEntriesAsRead(entryIds: string[]) {
+    for (const entryId of entryIds) {
+      this.queuedReadEntryIds.add(entryId)
+    }
+
+    if (this.queuedReadFlushPromise) {
+      return this.queuedReadFlushPromise
+    }
+
+    this.queuedReadFlushPromise = new Promise<void>((resolve) => {
+      setTimeout(() => {
+        const queuedEntryIds = Array.from(this.queuedReadEntryIds)
+        this.queuedReadEntryIds.clear()
+        this.queuedReadFlushPromise = null
+
+        this.markEntriesAsRead(queuedEntryIds)
+          .catch((error) => {
+            console.error(error)
+          })
+          .finally(resolve)
+      }, READ_MARK_BATCH_WINDOW)
+    })
+
+    return this.queuedReadFlushPromise
+  }
+
+  private async markEntryReadStatus({ entryId, read }: { entryId: string; read: boolean }) {
+    if (read) {
+      return this.markEntriesAsRead([entryId])
+    }
+
+    const entry = getEntry(entryId)
+    if (!entry || entry.read === read || (!entry.feedId && !entry.inboxHandle)) return
+
+    const id: FeedIdOrInboxHandle = entry.inboxHandle || entry.feedId || ""
+    const isInbox = !!entry.inboxHandle
+
+    const tx = createTransaction()
+    tx.store(() => {
+      entryActions.markEntryReadStatusInSession({ entryIds: [entryId], read })
+      if (read) {
+        unreadActions.removeUnread(id)
+      } else {
+        unreadActions.addUnread(id)
+      }
+    })
+
+    if (!LOCAL_RSS_MODE) {
+      tx.request(async () => {
+        if (read) {
+          await api().reads.markAsRead({ entryIds: [entryId], isInbox })
+        } else {
+          await api().reads.markAsUnread({ entryId, isInbox })
+        }
+      })
+    }
+
+    tx.rollback(() => {
+      entryActions.markEntryReadStatusInSession({ entryIds: [entryId], read: !read })
+      if (read) {
+        unreadActions.addUnread(id)
+      } else {
+        unreadActions.removeUnread(id)
+      }
+    })
+
+    tx.persist(() => {
+      return EntryService.patchMany({
+        entry: { read },
+        entryIds: [entryId],
+      })
+    })
+
+    if (entry.feedId) {
+      setFeedUnreadDirty(entry.feedId)
+    }
+    await tx.run()
+  }
+
+  async markEntryAsRead(entryId: string) {
+    return this.markEntryReadStatus({ entryId, read: true })
+  }
+
+  async markEntryAsUnread(entryId: string) {
+    return this.markEntryReadStatus({ entryId, read: false })
+  }
+}
+
+class UnreadActions implements Hydratable, Resetable {
+  async hydrate() {
+    const unreads = await UnreadService.getUnreadAll()
+    this.upsertManyInSession(unreads)
+  }
+
+  upsertManyInSession(unreads: UnreadSchema[], options?: UnreadUpdateOptions) {
+    const state = useUnreadStore.getState()
+    const nextData = options?.reset ? {} : { ...state.data }
+    for (const unread of unreads) {
+      nextData[unread.id] = unread.count
+    }
+    set({
+      data: nextData,
+    })
+  }
+
+  async upsertMany(unreads: UnreadSchema[] | UnreadStoreModel, options?: UnreadUpdateOptions) {
+    const normalizedUnreads = Array.isArray(unreads)
+      ? unreads
+      : Object.entries(unreads).map(([id, count]) => ({ id, count }))
+
+    const tx = createTransaction()
+    tx.store(() => this.upsertManyInSession(normalizedUnreads, options))
+    tx.persist(() => UnreadService.upsertMany(normalizedUnreads, options))
+    await tx.run()
+  }
+
+  async changeBatch(updates: UnreadStoreModel, type: "decrement" | "increment") {
+    const state = useUnreadStore.getState()
+    const dataToUpsert = Object.entries(updates).map(([id, count]) => {
+      const currentCount = state.data[id] || 0
+      return {
+        id,
+        count: type === "increment" ? currentCount + count : Math.max(0, currentCount - count),
+      }
+    })
+    await this.upsertMany(dataToUpsert)
+  }
+
+  addUnread(id: FeedIdOrInboxHandle, count = 1) {
+    const state = useUnreadStore.getState()
+    const cur = state.data[id] ?? 0
+    if (count <= 0) return cur
+    this.upsertMany([{ id, count: cur + count }])
+    return cur
+  }
+
+  removeUnread(id: FeedIdOrInboxHandle, count = 1) {
+    const state = useUnreadStore.getState()
+    const cur = state.data[id] ?? 0
+    if (count <= 0) return cur
+    this.upsertMany([{ id, count: Math.max(0, cur - count) }])
+    return cur
+  }
+
+  incrementById(id: FeedIdOrInboxHandle, count: number) {
+    return count > 0 ? this.addUnread(id, count) : this.removeUnread(id, -count)
+  }
+
+  async updateById(id: FeedIdOrInboxHandle | undefined | null, count: number) {
+    if (!id) return
+    const state = useUnreadStore.getState()
+    const cur = state.data[id] ?? 0
+    if (cur === count) return
+    await this.upsertMany([{ id, count }])
+  }
+
+  subscribeUnreadCount(fn: (count: number) => void, immediately?: boolean) {
+    const handler = (state: UnreadState): void => {
+      let unread = 0
+      for (const key in state.data) {
+        unread += state.data[key] ?? 0
+      }
+
+      fn(unread)
+    }
+    if (immediately) {
+      handler(get())
+    }
+    return useUnreadStore.subscribe(handler)
+  }
+
+  async reset() {
+    const tx = createTransaction()
+    tx.store(() => {
+      set(initialUnreadStore)
+    })
+
+    tx.persist(() => {
+      return UnreadService.reset()
+    })
+
+    await tx.run()
+  }
+}
+
+export const unreadActions = new UnreadActions()
+export const unreadSyncService = new UnreadSyncService()

@@ -1,0 +1,26 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "focal-web",
+  "compatibility_date": "2026-02-01",
+  "observability": {
+    "logs": {
+      "enabled": true,
+      "invocation_logs": true,
+    },
+    "traces": {
+      "enabled": true,
+    },
+  },
+  "account_id": "1f1d1678a2413a54c944b3081bab5c84",
+  "assets": {
+    "directory": "./out/web",
+    "not_found_handling": "single-page-application",
+  },
+  "workers_dev": true,
+  "env": {
+    "dev": {
+      "name": "focal-web-dev",
+      "workers_dev": true,
+    },
+  },
+}

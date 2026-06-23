@@ -1,0 +1,66 @@
+import type { PostHog } from "posthog-js"
+
+import { FirebaseAdapter, PostHogAdapter } from "./adapters"
+import { ProxyAdapter } from "./adapters/proxy"
+import type { TrackerMapper } from "./enums"
+import { TrackerManager } from "./manager"
+import type { Tracker } from "./types"
+
+class TrackManager extends TrackerManager {
+  private trackFns: Tracker[] = []
+
+  constructor() {
+    super({
+      enableBatchProcessing: false,
+      enableErrorRetry: true,
+      maxRetries: 2,
+    })
+  }
+
+  setTrackFn(fn: Tracker) {
+    this.trackFns.push(fn)
+
+    return () => {
+      this.trackFns = this.trackFns.filter((t) => t !== fn)
+    }
+  }
+
+  getTrackFn(): Tracker {
+    if (this.trackFns.length === 0 && this.getEnabledAdapters().length === 0) {
+      console.error("[Tracker warn]: Track function not set")
+    }
+    return (code, properties) => {
+      const legacyPromises = this.trackFns.map((fn) => fn(code, properties))
+      const modernPromise = this.track(code as TrackerMapper, properties)
+      return Promise.all([...legacyPromises, modernPromise])
+    }
+  }
+
+  setFirebaseTracker(tracker: {
+    logEvent: (
+      eventName: string,
+      properties?: Record<string, unknown>,
+    ) => Promise<unknown> | unknown
+    setUserId: (id: string) => Promise<unknown> | unknown
+    setUserProperties: (properties: Record<string, unknown>) => Promise<unknown> | unknown
+  }) {
+    const adapter = new FirebaseAdapter({ instance: tracker })
+    this.addAdapter(adapter)
+  }
+
+  setPostHogTracker(posthog: PostHog) {
+    const adapter = new PostHogAdapter({ instance: posthog })
+    this.addAdapter(adapter)
+  }
+
+  setProxyTracker(config: {
+    enabled: boolean
+    sender: (eventName: string, properties: Record<string, unknown>) => Promise<void>
+  }) {
+    const adapter = new ProxyAdapter({ enabled: config.enabled, sender: config.sender })
+    this.addAdapter(adapter)
+  }
+}
+
+export const trackManager = new TrackManager()
+export const improvedTrackManager = trackManager // Alias for backward compatibility

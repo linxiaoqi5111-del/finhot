@@ -1,22 +1,61 @@
-# macOS
+node_modules
+dist
+out
+.next
+.open-next
+.finhot-cache
+next-env.d.ts
 .DS_Store
+*.log*
+.env
+.eslintcache
+.env.*
+!.env.example
 
-# Syncthing / cloud-sync conflict copies
-.sync-conflict-*
+# Sentry Config File
+.env.sentry-build-plugin
+.vercel
+stats.html
 
-# Local recovery / corrupted git directories
-.git.corrupt-*
+electron.vite.config.*.mjs
+vite.config.*.mjs
 
-# Tessl auto-generated tile files (regenerated on every publish)
-*/tile.json
+.generated
+.turbo
 
-# Local Claude Code project settings
+apps/desktop/src/renderer/dev-dist
+tsconfig.tsbuildinfo
+buildServer.json
+
+**/**/generated-routes.ts
+
+apps/desktop/build/appxmanifest.xml
+apps/desktop/resources/cli
+
 .claude/settings.local.json
+.serena
 
-# Internal project instructions (not for public repo)
-CLAUDE.md
+.wrangler
 
-# FinHot local data
-finhot/data/
-finhot/.venv/
-__pycache__/
+# Local agent artifacts
+.codex/
+.agents/settings.local.json
+
+# IDE logs
+.cursor/debug-*.log
+
+# Security sensitive files
+*.pfx
+*.p12
+*.key
+apps/desktop/build/*.pfx
+
+# E2E outputs
+/apps/desktop/e2e/playwright-report/
+/apps/desktop/e2e/test-results/
+/apps/mobile/e2e/artifacts/
+/apps/mobile/report.xml
+/report.xml
+
+# Mobile local E2E build artifacts
+apps/mobile/build-*.tar.gz
