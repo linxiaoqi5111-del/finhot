@@ -13,9 +13,13 @@ type EnrichmentPayload = Record<
   string,
   {
     summary?: string | null
+    /** Why this entry was selected — distinct from content summary */
+    recommendationReason?: string | null
     tags?: string[]
     qualityScore?: number | null
     qualityTier?: string | null
+    /** Selection status derived from qualityScore */
+    selected?: "selected" | "watch" | "noise" | null
     qualityDetails?: {
       contentTypes?: Record<string, number>
       scores?: Record<string, number>
@@ -68,6 +72,12 @@ function collectEnrichments(): EnrichmentPayload {
       const tier =
         quality.quality_score >= 70 ? "high" : quality.quality_score >= 40 ? "medium" : "low"
       enrichment.qualityTier = tier
+      enrichment.selected =
+        quality.quality_score >= 70
+          ? "selected"
+          : quality.quality_score >= 40
+            ? "watch"
+            : "noise"
       enrichment.qualityDetails = {
         contentTypes: quality.content_types,
         scores: quality.scores,
@@ -75,6 +85,10 @@ function collectEnrichments(): EnrichmentPayload {
         negativeReasons: quality.negative_reasons,
         confidence: quality.confidence,
         summary: quality.summary,
+      }
+      // Derive recommendation reason from top positive reasons if no explicit one
+      if (quality.positive_reasons?.length) {
+        enrichment.recommendationReason = quality.positive_reasons.slice(0, 2).join("; ")
       }
       hasData = true
     }
