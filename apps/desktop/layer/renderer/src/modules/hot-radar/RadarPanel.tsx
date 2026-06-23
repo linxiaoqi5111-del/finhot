@@ -6,7 +6,6 @@ import { AnimatePresence } from "motion/react"
 import { memo, useCallback, useState } from "react"
 
 import { m } from "~/components/common/Motion"
-import { ROUTE_VIEW_ALL } from "~/constants"
 import { useNavigateEntry } from "~/hooks/biz/useNavigateEntry"
 
 import type { RadarTopic } from "./useRadarTopics"
@@ -62,13 +61,9 @@ const TopicCard = memo(
 
     const handleEntryClick = useCallback(
       (entryId: string) => {
-        navigateEntry({
-          timelineId: ROUTE_VIEW_ALL,
-          feedId: topic.sourceFeedIds[0] || "",
-          entryId,
-        })
+        navigateEntry({ entryId })
       },
-      [navigateEntry, topic.sourceFeedIds],
+      [navigateEntry],
     )
 
     return (
