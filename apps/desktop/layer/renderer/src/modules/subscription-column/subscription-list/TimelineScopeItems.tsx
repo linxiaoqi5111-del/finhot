@@ -12,7 +12,7 @@ import { useTranslation } from "react-i18next"
 import { FEED_COLLECTION_LIST, ROUTE_VIEW_ALL } from "~/constants"
 import { useNavigateEntry } from "~/hooks/biz/useNavigateEntry"
 import { useRouteParamsSelector } from "~/hooks/biz/useRouteParams"
-import { SMART_FEED_TODAY, SMART_FEED_UNREAD } from "~/lib/timeline-scope"
+import { SMART_FEED_RADAR, SMART_FEED_TODAY, SMART_FEED_UNREAD } from "~/lib/timeline-scope"
 
 import { feedColumnStyles } from "../styles"
 import { UnreadNumber } from "../UnreadNumber"
@@ -218,6 +218,12 @@ export const TimelineScopeItems = memo(() => {
             isActive={activeFeedId === FEED_COLLECTION_LIST}
             title={t("words.starred")}
             unread={counts.starred}
+          />
+          <ScopeItem
+            feedId={SMART_FEED_RADAR}
+            icon="i-lucide-radar"
+            iconClassName="text-purple"
+            title="热点雷达"
           />
         </>
       )}

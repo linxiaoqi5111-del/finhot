@@ -19,7 +19,8 @@ import { FeedNotFound } from "~/components/errors/FeedNotFound"
 import { FEED_COLLECTION_LIST, HotkeyScope, ROUTE_FEED_PENDING } from "~/constants"
 import { useNavigateEntry } from "~/hooks/biz/useNavigateEntry"
 import { useRouteParams, useRouteParamsSelector } from "~/hooks/biz/useRouteParams"
-import { isVirtualTimelineScopeFeedId } from "~/lib/timeline-scope"
+import { isVirtualTimelineScopeFeedId, SMART_FEED_RADAR } from "~/lib/timeline-scope"
+import { RadarPanel } from "~/modules/hot-radar/RadarPanel"
 import { useFeedQuery, useRefreshFeedMutation } from "~/queries/feed"
 import { useFeedHeaderTitle } from "~/store/feed/hooks"
 
@@ -339,15 +340,20 @@ function EntryColumnContent() {
 }
 
 function EntryColumnImpl() {
+  const feedId = useRouteParamsSelector((s) => s.feedId)
+  const contextValue = useMemo(
+    () => ({
+      isScrolledBeyondThreshold: atom(false),
+    }),
+    [],
+  )
+
+  if (feedId === SMART_FEED_RADAR) {
+    return <RadarPanel />
+  }
+
   return (
-    <EntryRootStateContext
-      value={useMemo(
-        () => ({
-          isScrolledBeyondThreshold: atom(false),
-        }),
-        [],
-      )}
-    >
+    <EntryRootStateContext value={contextValue}>
       <EntryColumnContent />
     </EntryRootStateContext>
   )

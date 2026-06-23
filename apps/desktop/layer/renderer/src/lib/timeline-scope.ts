@@ -6,6 +6,7 @@ import { FEED_COLLECTION_LIST } from "~/constants"
 export const SMART_FEED_TODAY = "smart-today"
 export const SMART_FEED_YESTERDAY = "smart-yesterday"
 export const SMART_FEED_UNREAD = "smart-unread"
+export const SMART_FEED_RADAR = "smart-radar"
 
 export const TOPIC_FEED_PREFIX = "topic-"
 export const MYTOPIC_FEED_PREFIX = "mytopic-"
@@ -52,6 +53,7 @@ export const getMyTopicIdFromFeedId = (feedId: string | undefined): string | und
 }
 
 export const isVirtualTimelineScopeFeedId = (feedId: string | undefined) =>
+  feedId === SMART_FEED_RADAR ||
   !!getSmartFeedScope(feedId) ||
   !!getTopicLabelFromFeedId(feedId) ||
   !!getMyTopicIdFromFeedId(feedId)
