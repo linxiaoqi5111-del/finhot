@@ -557,6 +557,29 @@ function xueqiuTimelineToFeed(userId: string, screenName: string, statuses: any[
 }
 
 /**
+ * Nitter instance hostnames used for Twitter RSS fallback.
+ * Entry links from these domains are normalized back to x.com.
+ */
+const NITTER_HOSTS = new Set(["xcancel.com", "nitter.net", "nitter.privacyredirect.com", "nitter.tiekoetter.com"])
+
+/**
+ * Normalize Nitter entry URLs back to x.com.
+ * e.g. https://xcancel.com/user/status/123#m -> https://x.com/user/status/123
+ */
+function normalizeNitterUrl(link: string | null): string | null {
+  if (!link) return null
+  try {
+    const parsed = new URL(link)
+    if (NITTER_HOSTS.has(parsed.hostname)) {
+      return `https://x.com${parsed.pathname.split("#")[0]}`
+    }
+  } catch {
+    /* not a URL */
+  }
+  return link
+}
+
+/**
  * Resolve a URL that should be handled by the built-in Twitter-to-RSS converter.
  * Returns the Twitter screen_name if matched, null otherwise.
  *
@@ -631,28 +654,39 @@ export function rssProxyPlugin(): PluginOption {
             }
           }
 
-          // Built-in Twitter-to-RSS: try local RSSHub first, then public instances
+          // Built-in Twitter-to-RSS: try Nitter instances first, then RSSHub
           const twitterHandle = resolveTwitterScreenName(url)
           if (twitterHandle) {
-            const twitterRssSources = [
-              `http://localhost:1200/twitter/user/${twitterHandle}`,
-              `https://rsshub.bestblogs.dev/twitter/user/${twitterHandle}`,
-              `https://rsshub.app/twitter/user/${twitterHandle}`,
+            const twitterRssSources: { url: string; ua?: string }[] = [
+              // Local RSSHub (fastest when available)
+              { url: `http://localhost:1200/twitter/user/${twitterHandle}` },
+              // Nitter/xcancel instances (free, no RSSHub dependency)
+              { url: `https://xcancel.com/${twitterHandle}/rss`, ua: "FreshRSS/1.24.0 (Linux; https://freshrss.org)" },
+              { url: `https://nitter.privacyredirect.com/${twitterHandle}/rss`, ua: "FreshRSS/1.24.0 (Linux; https://freshrss.org)" },
+              // Public RSSHub instances
+              { url: `https://rsshub.bestblogs.dev/twitter/user/${twitterHandle}` },
+              { url: `https://rsshub.app/twitter/user/${twitterHandle}` },
             ]
 
             let xml: string | null = null
-            for (const rsshubUrl of twitterRssSources) {
+            for (const source of twitterRssSources) {
               try {
                 const controller = new AbortController()
                 const timeout = setTimeout(() => controller.abort(), 10_000)
-                const rsshubRes = await fetch(rsshubUrl, {
+                const rsshubRes = await fetch(source.url, {
                   signal: controller.signal,
-                  headers: { Accept: "application/rss+xml, application/xml, text/xml" },
+                  headers: {
+                    Accept: "application/rss+xml, application/xml, text/xml",
+                    ...(source.ua ? { "User-Agent": source.ua } : {}),
+                  },
                 })
                 clearTimeout(timeout)
                 if (rsshubRes.ok) {
-                  xml = await rsshubRes.text()
-                  break
+                  const text = await rsshubRes.text()
+                  if (text.includes("<rss") || text.includes("<feed") || text.includes("<?xml")) {
+                    xml = text
+                    break
+                  }
                 }
               } catch {
                 continue
@@ -661,12 +695,16 @@ export function rssProxyPlugin(): PluginOption {
 
             if (!xml) {
               throw new Error(
-                `Twitter RSS 暂不可用：本地 RSSHub 未运行，公共实例也无法访问。请启动本地 RSSHub (localhost:1200) 或稍后重试。`,
+                `Twitter RSS 暂不可用：所有 Nitter 实例和 RSSHub 公共实例均无法访问。请启动本地 RSSHub (localhost:1200) 或稍后重试。`,
               )
             }
 
             const feedUrl = `finhot://twitter/${twitterHandle}`
             const result = parseRssFeed(xml, feedUrl, limit ?? RSS_ENTRY_LIMIT)
+            // Normalize Nitter URLs back to x.com in parsed entries
+            for (const entry of result.entries) {
+              entry.url = normalizeNitterUrl(entry.url)
+            }
             res.writeHead(200, {
               "Content-Type": "application/json",
               "Access-Control-Allow-Origin": "*",
