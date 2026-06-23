@@ -1534,6 +1534,271 @@ export function rssProxyPlugin(): PluginOption {
         }
       })
 
+      // ─── /api/public/items — Enhanced items with enrichment data ───
+      server.middlewares.use("/api/public/items", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "GET") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const parsedUrl = new URL(req.url ?? "/", "http://localhost")
+          const filter = parsedUrl.searchParams.get("filter") ?? "selected"
+          const since = parsedUrl.searchParams.get("since")
+          const q = parsedUrl.searchParams.get("q")
+          const category = parsedUrl.searchParams.get("category")
+          const limitParam = parsedUrl.searchParams.get("limit")
+          const limit = limitParam ? Math.min(Number.parseInt(limitParam, 10), 500) : 50
+
+          let entries = loadAllCachedEntries()
+          const enrichments = readEnrichments()
+          const manifest = readManifest()
+
+          if (since) {
+            const sinceMs = new Date(since).getTime()
+            entries = entries.filter((e) => new Date(e.publishedAt).getTime() >= sinceMs)
+          }
+
+          if (q) {
+            const lq = q.toLowerCase()
+            entries = entries.filter(
+              (e) =>
+                (e.title ?? "").toLowerCase().includes(lq) ||
+                (enrichments[e.id]?.summary ?? "").toLowerCase().includes(lq) ||
+                (enrichments[e.id]?.tags ?? []).some((t) => t.toLowerCase().includes(lq)),
+            )
+          }
+
+          if (category) {
+            entries = entries.filter((e) => {
+              const feed = manifest.feeds[e.feedId]
+              return feed?.category === category
+            })
+          }
+
+          if (filter === "selected") {
+            entries = entries.filter((e) => deriveSelected(enrichments[e.id] ?? {}) === "selected")
+          } else if (filter === "watch") {
+            entries = entries.filter((e) => {
+              const sel = deriveSelected(enrichments[e.id] ?? {})
+              return sel === "selected" || sel === "watch"
+            })
+          }
+
+          const items = entries.slice(0, limit).map((e) => {
+            const en = enrichments[e.id] ?? {}
+            const feed = manifest.feeds[e.feedId]
+            return {
+              id: e.id,
+              title: e.title,
+              url: e.url,
+              publishedAt: e.publishedAt,
+              author: e.author,
+              feedId: e.feedId,
+              feedTitle: feed?.title ?? null,
+              feedCategory: feed?.category ?? null,
+              summary: en.summary ?? null,
+              recommendationReason: en.recommendationReason ?? null,
+              qualityScore: en.qualityScore ?? null,
+              selected: deriveSelected(en),
+              tags: en.tags ?? [],
+              translation: en.translation ?? null,
+              clusterId: en.clusterId ?? null,
+              relatedEntryIds: en.relatedEntryIds ?? [],
+            }
+          })
+
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=60",
+          })
+          res.end(JSON.stringify({ items, total: items.length, filter }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(500, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /api/public/topics — Event clusters / hot topics ───
+      server.middlewares.use("/api/public/topics", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "GET") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const allEntries = loadAllCachedEntries()
+          const enrichments = readEnrichments()
+          const manifest = readManifest()
+
+          // Build clusters using embedding similarity
+          const SIM_THRESHOLD = 0.82
+          const TIME_WINDOW_MS = 86400000
+          const items = allEntries
+            .map((e) => {
+              const en = enrichments[e.id]
+              return en?.embedding
+                ? {
+                    id: e.id,
+                    vec: en.embedding,
+                    time: new Date(e.publishedAt).getTime(),
+                    feedId: e.feedId,
+                  }
+                : null
+            })
+            .filter(
+              (x): x is { id: string; vec: number[]; time: number; feedId: string } => x !== null,
+            )
+
+          function cosSim(a: number[], b: number[]): number {
+            if (a.length !== b.length) return 0
+            let dot = 0,
+              na = 0,
+              nb = 0
+            for (let i = 0; i < a.length; i++) {
+              dot += a[i]! * b[i]!
+              na += a[i]! * a[i]!
+              nb += b[i]! * b[i]!
+            }
+            return na && nb ? dot / Math.sqrt(na * nb) : 0
+          }
+
+          const memberOf: Record<string, string> = {}
+          const clusters: { leaderId: string; members: string[] }[] = []
+
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i]!
+            if (memberOf[item.id]) continue
+            const cluster = [item.id]
+            for (let j = i + 1; j < items.length; j++) {
+              const other = items[j]!
+              if (memberOf[other.id]) continue
+              if (Math.abs(item.time - other.time) > TIME_WINDOW_MS) continue
+              if (item.feedId === other.feedId) continue
+              if (cosSim(item.vec, other.vec) >= SIM_THRESHOLD) {
+                cluster.push(other.id)
+                memberOf[other.id] = item.id
+              }
+            }
+            if (cluster.length > 1) {
+              clusters.push({ leaderId: item.id, members: cluster })
+            }
+          }
+
+          // Sort by cluster size (most sources first), then by recency
+          clusters.sort((a, b) => b.members.length - a.members.length)
+
+          const entryMap: Record<string, CachedEntry> = {}
+          for (const e of allEntries) entryMap[e.id] = e
+
+          const topics = clusters.slice(0, 20).map((c) => {
+            const leader = entryMap[c.leaderId]
+            const en = enrichments[c.leaderId] ?? {}
+            const sources = new Set(
+              c.members.map((mid) => manifest.feeds[entryMap[mid]?.feedId ?? ""]?.title).filter(Boolean),
+            )
+            return {
+              id: c.leaderId,
+              title: leader?.title ?? null,
+              sourceCount: sources.size,
+              sources: [...sources],
+              entryCount: c.members.length,
+              entries: c.members,
+              publishedAt: leader?.publishedAt ?? null,
+              summary: en.summary ?? null,
+              qualityScore: en.qualityScore ?? null,
+              selected: deriveSelected(en),
+              tags: en.tags ?? [],
+            }
+          })
+
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=120",
+          })
+          res.end(JSON.stringify({ topics, total: topics.length }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(500, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /api/public/daily — Today's digest (selected + watch, grouped) ───
+      server.middlewares.use("/api/public/daily", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "GET") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const parsedUrl = new URL(req.url ?? "/", "http://localhost")
+          const dateParam = parsedUrl.searchParams.get("date")
+
+          const targetDate = dateParam ? new Date(dateParam) : new Date()
+          targetDate.setHours(0, 0, 0, 0)
+          const dayStart = targetDate.getTime()
+          const dayEnd = dayStart + 86400000
+
+          const allEntries = loadAllCachedEntries()
+          const enrichments = readEnrichments()
+          const manifest = readManifest()
+
+          const todayEntries = allEntries.filter((e) => {
+            const t = new Date(e.publishedAt).getTime()
+            return t >= dayStart && t < dayEnd
+          })
+
+          const selected = todayEntries.filter(
+            (e) => deriveSelected(enrichments[e.id] ?? {}) === "selected",
+          )
+          const watch = todayEntries.filter(
+            (e) => deriveSelected(enrichments[e.id] ?? {}) === "watch",
+          )
+
+          const mapEntry = (e: CachedEntry) => {
+            const en = enrichments[e.id] ?? {}
+            const feed = manifest.feeds[e.feedId]
+            return {
+              id: e.id,
+              title: e.title,
+              url: e.url,
+              publishedAt: e.publishedAt,
+              feedTitle: feed?.title ?? null,
+              summary: en.summary ?? null,
+              recommendationReason: en.recommendationReason ?? null,
+              qualityScore: en.qualityScore ?? null,
+              selected: deriveSelected(en),
+              tags: en.tags ?? [],
+            }
+          }
+
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=120",
+          })
+          res.end(
+            JSON.stringify({
+              date: targetDate.toISOString().slice(0, 10),
+              totalEntries: todayEntries.length,
+              selected: selected.map(mapEntry),
+              watch: watch.map(mapEntry),
+            }),
+          )
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(500, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
       // ─── /feed.xml — Selected entries RSS (精选, qualityScore ≥ 70) ───
       server.middlewares.use("/feed.xml", async (_req, res) => {
         try {
