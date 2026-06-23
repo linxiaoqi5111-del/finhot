@@ -19,6 +19,7 @@ import { previewLocalRssFeed, upsertLocalRssSubscription } from "~/modules/local
 import {
   addAccountById,
   addAccountByUrl,
+  fetchAccountNameAfterAdd,
   isWechat2rssConfigured,
   resolveAccountByName,
   searchAccountsByName,
@@ -190,9 +191,14 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
 
     const feedUrl = isUrl ? await addAccountByUrl(trimmed) : await addAccountById(trimmed)
 
+    // Query wechat2rss list to get the account name (more reliable than feed XML title)
+    const accountName = await fetchAccountNameAfterAdd(feedUrl)
+
     // Subscribe to the returned feed URL
     const preview = await previewLocalRssFeed({ url: feedUrl })
     const feedData = preview.feed
+
+    const title = accountName || feedData.title || "微信公众号 (同步中)"
 
     await upsertLocalRssSubscription({
       feed: { ...feedData, type: "feed" as const },
@@ -202,13 +208,13 @@ export function AddBloggerPanel({ onClose }: { onClose?: () => void }) {
         category: "公众号",
         isPrivate: false,
         hideFromTimeline: null,
-        title: feedData.title || "微信公众号 (同步中)",
+        title,
         feedId: feedData.id,
         listId: undefined,
       },
     })
 
-    return feedData.title || trimmed
+    return title
   }, [])
 
   const handleDiscovery = useCallback(async (trimmed: string) => {

@@ -621,19 +621,40 @@ export function rssProxyPlugin(): PluginOption {
             }
           }
 
-          // Built-in Twitter-to-RSS: use local RSSHub Docker for Twitter feeds
+          // Built-in Twitter-to-RSS: try local RSSHub first, then public instances
           const twitterHandle = resolveTwitterScreenName(url)
           if (twitterHandle) {
-            const rsshubUrl = `http://localhost:1200/twitter/user/${twitterHandle}`
-            const controller = new AbortController()
-            const timeout = setTimeout(() => controller.abort(), RSS_FETCH_TIMEOUT_MS)
-            const rsshubRes = await fetch(rsshubUrl, {
-              signal: controller.signal,
-              headers: { Accept: "application/rss+xml, application/xml, text/xml" },
-            })
-            clearTimeout(timeout)
-            if (!rsshubRes.ok) throw new Error(`RSSHub Twitter HTTP ${rsshubRes.status}`)
-            const xml = await rsshubRes.text()
+            const twitterRssSources = [
+              `http://localhost:1200/twitter/user/${twitterHandle}`,
+              `https://rsshub.bestblogs.dev/twitter/user/${twitterHandle}`,
+              `https://rsshub.app/twitter/user/${twitterHandle}`,
+            ]
+
+            let xml: string | null = null
+            for (const rsshubUrl of twitterRssSources) {
+              try {
+                const controller = new AbortController()
+                const timeout = setTimeout(() => controller.abort(), 10_000)
+                const rsshubRes = await fetch(rsshubUrl, {
+                  signal: controller.signal,
+                  headers: { Accept: "application/rss+xml, application/xml, text/xml" },
+                })
+                clearTimeout(timeout)
+                if (rsshubRes.ok) {
+                  xml = await rsshubRes.text()
+                  break
+                }
+              } catch {
+                continue
+              }
+            }
+
+            if (!xml) {
+              throw new Error(
+                `Twitter RSS 暂不可用：本地 RSSHub 未运行，公共实例也无法访问。请启动本地 RSSHub (localhost:1200) 或稍后重试。`,
+              )
+            }
+
             const feedUrl = `finhot://twitter/${twitterHandle}`
             const result = parseRssFeed(xml, feedUrl, limit ?? RSS_ENTRY_LIMIT)
             res.writeHead(200, {

@@ -23,6 +23,7 @@ import {
   triggerEntryEnrichmentFromIngest,
   triggerEntryRankFromIngest,
 } from "~/modules/entry-enrichment/trigger"
+import { fetchAccountNameAfterAdd } from "~/modules/wechat2rss/service"
 
 import { isSupportedLocalRssUrl, LOCAL_RSS_URL_MESSAGE } from "./url"
 
@@ -355,18 +356,24 @@ export async function refreshLocalRssFeed(
   await feedActions.upsertMany([nextFeedWithIdentity])
 
   // Auto-sync subscription title when feed title becomes available
-  if (nextFeed.title) {
-    const subscription = getSubscriptionByFeedId(feed.id)
-    if (subscription) {
-      const subTitle = subscription.title ?? ""
-      const needsSync =
-        !subTitle ||
-        subTitle === "微信公众号 (同步中)" ||
-        subTitle.startsWith("http://localhost:") ||
-        subTitle.startsWith("http://mp.weixin.qq.com") ||
-        subTitle.startsWith("https://mp.weixin.qq.com")
-      if (needsSync && nextFeed.title !== subTitle) {
-        await subscriptionActions.upsertMany([{ ...subscription, title: nextFeed.title }])
+  const subscription = getSubscriptionByFeedId(feed.id)
+  if (subscription) {
+    const subTitle = subscription.title ?? ""
+    const needsSync =
+      !subTitle ||
+      subTitle === "微信公众号 (同步中)" ||
+      subTitle.startsWith("http://localhost:") ||
+      subTitle.startsWith("http://mp.weixin.qq.com") ||
+      subTitle.startsWith("https://mp.weixin.qq.com")
+
+    if (needsSync) {
+      let resolvedTitle: string | null = nextFeed.title
+      // If feed XML still has no title, try querying wechat2rss list for the account name
+      if (!resolvedTitle && feed.url) {
+        resolvedTitle = await fetchAccountNameAfterAdd(feed.url)
+      }
+      if (resolvedTitle && resolvedTitle !== subTitle) {
+        await subscriptionActions.upsertMany([{ ...subscription, title: resolvedTitle }])
       }
     }
   }

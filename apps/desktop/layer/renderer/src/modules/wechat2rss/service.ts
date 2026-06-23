@@ -123,6 +123,28 @@ export const addAccountByUrl = async (articleUrl: string): Promise<string> => {
 }
 
 /**
+ * After adding an account (by URL or biz ID), query the wechat2rss list to find
+ * the account name. Returns the name if found, or null.
+ */
+export const fetchAccountNameAfterAdd = async (feedUrl: string): Promise<string | null> => {
+  try {
+    const { items } = await listAccounts({ page: 1, size: 20 })
+    if (items.length === 0) return null
+
+    // Try to match by feed URL path (e.g. "/feed/<hash>.xml")
+    const feedPath = feedUrl.replace(/^https?:\/\/[^/]+/, "")
+    const match = items.find((item) => item.link && item.link.includes(feedPath))
+    if (match) return match.name
+
+    // Fallback: return the most recently added account (last in list or first by ID desc)
+    const sorted = [...items].sort((a, b) => b.id - a.id)
+    return sorted[0]?.name ?? null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Delete a WeChat public account subscription by its biz ID.
  */
 export const deleteAccount = async (bizId: string): Promise<void> => {
