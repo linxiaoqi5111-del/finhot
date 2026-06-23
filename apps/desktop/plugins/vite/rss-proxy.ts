@@ -916,11 +916,13 @@ export function rssProxyPlugin(): PluginOption {
           // Infer category from URL for cache
           const feedCategory = /xueqiu/i.test(url)
             ? "雪球"
-            : /weibo/i.test(url)
-              ? "微博"
-              : /mp\.weixin/i.test(url)
-                ? "公众号"
-                : null
+            : /twitter|nitter|xcancel|\/x\.com\//i.test(url)
+              ? "推特"
+              : /weibo/i.test(url)
+                ? "微博"
+                : /mp\.weixin/i.test(url)
+                  ? "公众号"
+                  : null
           cacheFeedResult(result.feed, result.entries, feedCategory)
 
           res.writeHead(200, {
@@ -1613,8 +1615,8 @@ a{color:inherit;text-decoration:none}
 .feed-list::-webkit-scrollbar{width:4px}
 .feed-list::-webkit-scrollbar-thumb{background:color-mix(in srgb, rgba(var(--color-text)) 10%, transparent);border-radius:4px}
 .cat-header{display:flex;align-items:center;gap:6px;padding:8px 10px 4px;cursor:pointer;user-select:none;border:none;background:none;width:100%;text-align:left;font-family:inherit}
-.cat-header .cat-arrow{width:12px;height:12px;flex-shrink:0;transition:transform 0.15s;color:color-mix(in srgb, rgba(var(--color-textTertiary)) 100%, transparent)}
-.cat-header .cat-arrow.collapsed{transform:rotate(-90deg)}
+.cat-header .cat-arrow{width:12px;height:12px;flex-shrink:0;transition:transform 0.15s;color:color-mix(in srgb, rgba(var(--color-textTertiary)) 100%, transparent);transform:rotate(0deg)}
+.cat-header .cat-arrow.expanded{transform:rotate(90deg)}
 .cat-header .cat-label{font-size:11px;font-weight:600;color:color-mix(in srgb, rgba(var(--color-textSecondary)) 100%, transparent)}
 .cat-header .cat-count{font-size:10px;color:color-mix(in srgb, rgba(var(--color-textTertiary)) 100%, transparent);margin-left:auto}
 .cat-feeds{overflow:hidden;transition:max-height 0.2s ease}
@@ -1820,18 +1822,19 @@ function getPlatform(feedUrl,cat){
     if(/weibo/i.test(feedUrl))return"weibo";
     if(/wechat|mp\\.weixin/i.test(feedUrl))return"wechat";
   }
-  if(cat==="雪球")return"xueqiu";if(cat==="推特")return"twitter";if(cat==="微博")return"weibo";if(cat==="公众号")return"wechat";
+  if(cat==="雪球"||cat==="雪")return"xueqiu";if(cat==="推特"||cat==="推")return"twitter";if(cat==="微博"||cat==="微")return"weibo";if(cat==="公众号")return"wechat";
   return"other";
 }
 
-// ── Sidebar feed list (grouped by category) ──
+// ── Sidebar feed list (grouped by category, matches local app) ──
 var collapsedCats={};
-var CAT_ORDER=["\u5fae\u535a","\u63a8\u7279","\u96ea\u7403","\u516c\u4f17\u53f7","\u5176\u4ed6"];
-var CAT_ICONS={"\u5fae\u535a":'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>',"\u63a8\u7279":'<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',"\u96ea\u7403":'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',"\u516c\u4f17\u53f7":'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',"\u5176\u4ed6":'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>'};
+var CAT_ORDER=["\u63a8\u7279","\u516c\u4f17\u53f7","\u96ea\u7403","\u5fae\u535a","\u5176\u4ed6"];
+var CAT_NORMALIZE={"\u5fae":"\u5fae\u535a","\u63a8":"\u63a8\u7279","\u96ea":"\u96ea\u7403","\u5fae\u535a":"\u5fae\u535a","\u63a8\u7279":"\u63a8\u7279","\u96ea\u7403":"\u96ea\u7403","\u516c\u4f17\u53f7":"\u516c\u4f17\u53f7"};
+function normCat(c){return CAT_NORMALIZE[c]||c}
 function groupFeeds(){
   var groups={};var order=[];
   feeds.forEach(function(f){
-    var cat=f.category||"\u5176\u4ed6";
+    var cat=normCat(f.category||"\u5176\u4ed6");
     if(!groups[cat]){groups[cat]=[];order.push(cat)}
     groups[cat].push(f);
   });
@@ -1841,14 +1844,12 @@ function groupFeeds(){
 function renderFeeds(){
   var g=groupFeeds();
   var html="";
-  var arrowSvg='<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  var arrowSvg='<svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
   g.order.forEach(function(cat){
     var list=g.groups[cat];
-    var isCollapsed=!!collapsedCats[cat];
-    var catIcon=CAT_ICONS[cat]||CAT_ICONS["\u5176\u4ed6"];
+    var isCollapsed=collapsedCats[cat]!==false;
     html+='<button class="cat-header" data-cat-toggle="'+esc(cat)+'">';
-    html+='<span class="cat-arrow'+(isCollapsed?' collapsed':'')+'">'+arrowSvg+'</span>';
-    html+=catIcon;
+    html+='<span class="cat-arrow'+(isCollapsed?'':' expanded')+'">'+arrowSvg+'</span>';
     html+='<span class="cat-label">'+esc(cat)+'</span>';
     html+='<span class="cat-count">'+list.length+'</span>';
     html+='</button>';
@@ -1963,10 +1964,10 @@ document.addEventListener("click",function(ev){
   var catToggle=ev.target.closest(".cat-header");
   if(catToggle){
     var cat=catToggle.getAttribute("data-cat-toggle");
-    collapsedCats[cat]=!collapsedCats[cat];
+    collapsedCats[cat]=collapsedCats[cat]===false?true:false;
     var arrow=catToggle.querySelector(".cat-arrow");
     var group=document.querySelector('.cat-feeds[data-cat-group="'+cat+'"]');
-    if(arrow)arrow.classList.toggle("collapsed");
+    if(arrow)arrow.classList.toggle("expanded");
     if(group)group.classList.toggle("collapsed");
     return;
   }

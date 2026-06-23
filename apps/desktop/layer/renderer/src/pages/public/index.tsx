@@ -66,12 +66,46 @@ function stripHtml(html: string): string {
   return tmp.textContent ?? ""
 }
 
-const CAT_ORDER = ["微博", "推特", "雪球", "公众号", "其他"]
+const CAT_ORDER = ["推特", "公众号", "雪球", "微博", "其他"]
+
+const CAT_NORMALIZE: Record<string, string> = {
+  微: "微博",
+  推: "推特",
+  雪: "雪球",
+}
+
+function normalizeCat(cat: string): string {
+  return CAT_NORMALIZE[cat] ?? cat
+}
+
+type PlatformFilter = "all" | "xueqiu" | "weibo" | "twitter" | "wechat" | "other"
+
+const PLATFORM_TABS: { key: PlatformFilter; label: string }[] = [
+  { key: "all", label: "全部" },
+  { key: "xueqiu", label: "雪球" },
+  { key: "weibo", label: "微博" },
+  { key: "twitter", label: "推特" },
+  { key: "wechat", label: "公众号" },
+  { key: "other", label: "其他" },
+]
+
+function getPlatformForFeed(feedUrl: string, category: string | null): PlatformFilter {
+  if (/xueqiu/i.test(feedUrl)) return "xueqiu"
+  if (/twitter|nitter|xcancel|\/x\.com\//i.test(feedUrl)) return "twitter"
+  if (/weibo/i.test(feedUrl)) return "weibo"
+  if (/wechat|mp\.weixin/i.test(feedUrl)) return "wechat"
+  const norm = category ? normalizeCat(category) : null
+  if (norm === "雪球") return "xueqiu"
+  if (norm === "推特") return "twitter"
+  if (norm === "微博") return "weibo"
+  if (norm === "公众号") return "wechat"
+  return "other"
+}
 
 function groupByCategory(feeds: PublicFeed[]): [string, PublicFeed[]][] {
   const groups = new Map<string, PublicFeed[]>()
   for (const feed of feeds) {
-    const cat = feed.category ?? "其他"
+    const cat = normalizeCat(feed.category ?? "其他")
     const existing = groups.get(cat)
     if (existing) existing.push(feed)
     else groups.set(cat, [feed])
@@ -182,7 +216,8 @@ export function Component() {
       .catch(() => {})
   }, [selectedFeedId])
 
-  const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
+  const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({})
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>("all")
   const grouped = useMemo(() => groupByCategory(feeds), [feeds])
 
   const feedById = useMemo(() => {
@@ -193,8 +228,18 @@ export function Component() {
 
   const handleFeedClick = useCallback((feedId: string | null) => {
     setSelectedFeedId((prev) => (prev === feedId ? null : feedId))
+    setPlatformFilter("all")
     if (mainRef.current) mainRef.current.scrollTop = 0
   }, [])
+
+  const filteredEntries = useMemo(() => {
+    if (platformFilter === "all") return entries
+    return entries.filter((e) => {
+      const feed = feedById.get(e.feedId)
+      if (!feed) return false
+      return getPlatformForFeed(feed.url, feed.category) === platformFilter
+    })
+  }, [entries, platformFilter, feedById])
 
   if (loading) {
     return (
@@ -254,15 +299,15 @@ export function Component() {
             <span>全部</span>
           </button>
 
-          {/* Grouped feeds */}
+          {/* Grouped feeds (matches local app sidebar) */}
           {grouped.map(([category, categoryFeeds]) => {
-            const isCollapsed = !!collapsedCats[category]
+            const isExpanded = !!expandedCats[category]
             return (
-              <div key={category} className="mb-1">
+              <div key={category} className="mb-0.5">
                 <button
                   type="button"
                   onClick={() =>
-                    setCollapsedCats((prev) => ({
+                    setExpandedCats((prev) => ({
                       ...prev,
                       [category]: !prev[category],
                     }))
@@ -270,28 +315,24 @@ export function Component() {
                   className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
                 >
                   <svg
-                    width="12"
-                    height="12"
+                    width="10"
+                    height="10"
                     viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+                    fill="currentColor"
                     className={`shrink-0 text-neutral-400 transition-transform duration-150 dark:text-neutral-500 ${
-                      isCollapsed ? "-rotate-90" : ""
+                      isExpanded ? "rotate-90" : ""
                     }`}
                   >
-                    <polyline points="6 9 12 15 18 9" />
+                    <path d="M8 5v14l11-7z" />
                   </svg>
-                  <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
+                  <span className="grow truncate text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
                     {category}
                   </span>
-                  <span className="ml-auto text-[10px] text-neutral-400 dark:text-neutral-500">
+                  <span className="text-[10px] text-neutral-400 dark:text-neutral-500">
                     {categoryFeeds.length}
                   </span>
                 </button>
-                {!isCollapsed &&
+                {isExpanded &&
                   categoryFeeds.map((feed) => (
                     <button
                       key={feed.id}
@@ -340,18 +381,38 @@ export function Component() {
           <h1 className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
             {selectedFeedId ? (feedById.get(selectedFeedId)?.title ?? "订阅") : "全部文章"}
           </h1>
-          <span className="text-xs text-neutral-400">{entries.length} 条</span>
+          <span className="text-xs text-neutral-400">{filteredEntries.length} 条</span>
         </div>
+
+        {/* Platform filter tabs */}
+        {!selectedFeedId && (
+          <div className="flex shrink-0 items-center gap-1 px-4 pb-2 pt-1">
+            {PLATFORM_TABS.map((tab) => (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setPlatformFilter(tab.key)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  platformFilter === tab.key
+                    ? "border border-blue-500/30 bg-blue-500/15 font-semibold text-blue-600 dark:text-blue-400"
+                    : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-700 dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-300"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Entries */}
         <div ref={mainRef} className="flex-1 overflow-y-auto p-4">
-          {entries.length === 0 ? (
+          {filteredEntries.length === 0 ? (
             <div className="flex h-full items-center justify-center">
               <p className="text-sm text-neutral-400">暂无内容</p>
             </div>
           ) : (
             <div className="mx-auto flex max-w-3xl flex-col gap-2">
-              {entries.map((entry) => (
+              {filteredEntries.map((entry) => (
                 <EntryCard
                   key={entry.id}
                   entry={entry}
