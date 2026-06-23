@@ -5,17 +5,143 @@
  * Also provides:
  * - `/api/jina/read` — Jina Reader fallback for content extraction
  * - `/api/defuddle/read` — Defuddle content extraction (markdown)
+ * - `/api/public/subscriptions` — Public read-only feed list
+ * - `/api/public/entries` — Public read-only entries
  */
 import { execFile } from "node:child_process"
 import crypto from "node:crypto"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 
-import { resolve as resolvePath } from "pathe"
+import { join, resolve as resolvePath } from "pathe"
 import type { PluginOption } from "vite"
 
 const RSS_FETCH_TIMEOUT_MS = 30_000
 const RSS_ENTRY_LIMIT = 30
 const JINA_READER_BASE = "https://r.jina.ai/"
 const DEFUDDLE_BASE = "https://defuddle.md/"
+
+// ─── Public feed cache (server-side persistence for visitor mode) ───
+
+interface CachedFeed {
+  id: string
+  title: string | null
+  url: string
+  description: string | null
+  image: string | null
+  siteUrl: string | null
+  category: string | null
+  updatedAt: string
+}
+
+interface CachedEntry {
+  id: string
+  title: string | null
+  url: string | null
+  content: string
+  description: string | null
+  author: string | null
+  publishedAt: string
+  feedId: string
+}
+
+interface FeedCacheManifest {
+  feeds: Record<string, CachedFeed>
+  updatedAt: string
+}
+
+let cacheDir = ""
+
+function ensureCacheDir(rootDir: string) {
+  if (cacheDir) return cacheDir
+  cacheDir = join(rootDir, ".finhot-cache")
+  if (!existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true })
+  const entriesDir = join(cacheDir, "entries")
+  if (!existsSync(entriesDir)) mkdirSync(entriesDir, { recursive: true })
+  return cacheDir
+}
+
+function readManifest(): FeedCacheManifest {
+  const file = join(cacheDir, "manifest.json")
+  if (!existsSync(file)) return { feeds: {}, updatedAt: new Date().toISOString() }
+  try {
+    return JSON.parse(readFileSync(file, "utf-8"))
+  } catch {
+    return { feeds: {}, updatedAt: new Date().toISOString() }
+  }
+}
+
+function writeManifest(manifest: FeedCacheManifest) {
+  writeFileSync(join(cacheDir, "manifest.json"), JSON.stringify(manifest, null, 2))
+}
+
+function cacheFeedResult(
+  feedData: {
+    id: string
+    title: string | null
+    url: string
+    description: string | null
+    image: string | null
+    siteUrl: string | null
+  },
+  entries: {
+    id: string
+    title: string | null
+    url: string | null
+    content: string
+    description: string | null
+    author: string | null
+    publishedAt: string
+    feedId: string
+  }[],
+  category?: string | null,
+) {
+  if (!cacheDir) return
+  try {
+    const manifest = readManifest()
+    manifest.feeds[feedData.id] = {
+      id: feedData.id,
+      title: feedData.title,
+      url: feedData.url,
+      description: feedData.description,
+      image: feedData.image,
+      siteUrl: feedData.siteUrl,
+      category: category ?? manifest.feeds[feedData.id]?.category ?? null,
+      updatedAt: new Date().toISOString(),
+    }
+    manifest.updatedAt = new Date().toISOString()
+    writeManifest(manifest)
+
+    // Merge new entries with existing, keep latest by publishedAt, cap at RSS_ENTRY_LIMIT
+    const entriesFile = join(cacheDir, "entries", `${feedData.id}.json`)
+    let existing: CachedEntry[] = []
+    if (existsSync(entriesFile)) {
+      try {
+        existing = JSON.parse(readFileSync(entriesFile, "utf-8"))
+      } catch {
+        /* ignore */
+      }
+    }
+    const byId = new Map<string, CachedEntry>()
+    for (const e of existing) byId.set(e.id, e)
+    for (const e of entries)
+      byId.set(e.id, {
+        id: e.id,
+        title: e.title,
+        url: e.url,
+        content: e.content,
+        description: e.description,
+        author: e.author,
+        publishedAt: e.publishedAt,
+        feedId: e.feedId,
+      })
+    const merged = [...byId.values()]
+      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+      .slice(0, RSS_ENTRY_LIMIT * 2)
+    writeFileSync(entriesFile, JSON.stringify(merged, null, 2))
+  } catch {
+    // Cache write failure should never break the main flow
+  }
+}
 
 /**
  * Fetch content via Jina Reader (r.jina.ai).
@@ -560,7 +686,12 @@ function xueqiuTimelineToFeed(userId: string, screenName: string, statuses: any[
  * Nitter instance hostnames used for Twitter RSS fallback.
  * Entry links from these domains are normalized back to x.com.
  */
-const NITTER_HOSTS = new Set(["xcancel.com", "nitter.net", "nitter.privacyredirect.com", "nitter.tiekoetter.com"])
+const NITTER_HOSTS = new Set([
+  "xcancel.com",
+  "nitter.net",
+  "nitter.privacyredirect.com",
+  "nitter.tiekoetter.com",
+])
 
 /**
  * Normalize Nitter entry URLs back to x.com.
@@ -609,6 +740,10 @@ export function rssProxyPlugin(): PluginOption {
   return {
     name: "rss-proxy",
     configureServer(server) {
+      // Initialize the public feed cache directory
+      const rootDir = server.config.root ? resolvePath(server.config.root, "../..") : process.cwd()
+      ensureCacheDir(rootDir)
+
       // ─── /api/rss/preview — RSS fetch with Jina fallback ───
       server.middlewares.use("/api/rss/preview", async (req, res) => {
         if (handleCors(req, res)) return
@@ -640,6 +775,7 @@ export function rssProxyPlugin(): PluginOption {
                 statuses,
                 limit ?? RSS_ENTRY_LIMIT,
               )
+              cacheFeedResult(result.feed, result.entries, "雪球")
               res.writeHead(200, {
                 "Content-Type": "application/json",
                 "Access-Control-Allow-Origin": "*",
@@ -654,16 +790,17 @@ export function rssProxyPlugin(): PluginOption {
             }
           }
 
-          // Built-in Twitter-to-RSS: try Nitter instances first, then RSSHub
+          // Built-in Twitter-to-RSS: try Nitter instances first (most reliable), then RSSHub
           const twitterHandle = resolveTwitterScreenName(url)
           if (twitterHandle) {
+            const FRESHRSS_UA = "FreshRSS/1.24.0 (Linux; https://freshrss.org)"
             const twitterRssSources: { url: string; ua?: string }[] = [
-              // Local RSSHub (fastest when available)
+              // Nitter/xcancel instances — primary, most reliable for Twitter RSS
+              { url: `https://xcancel.com/${twitterHandle}/rss`, ua: FRESHRSS_UA },
+              { url: `https://nitter.privacyredirect.com/${twitterHandle}/rss`, ua: FRESHRSS_UA },
+              // Local RSSHub (when running)
               { url: `http://localhost:1200/twitter/user/${twitterHandle}` },
-              // Nitter/xcancel instances (free, no RSSHub dependency)
-              { url: `https://xcancel.com/${twitterHandle}/rss`, ua: "FreshRSS/1.24.0 (Linux; https://freshrss.org)" },
-              { url: `https://nitter.privacyredirect.com/${twitterHandle}/rss`, ua: "FreshRSS/1.24.0 (Linux; https://freshrss.org)" },
-              // Public RSSHub instances
+              // Public RSSHub instances (least reliable for Twitter)
               { url: `https://rsshub.bestblogs.dev/twitter/user/${twitterHandle}` },
               { url: `https://rsshub.app/twitter/user/${twitterHandle}` },
             ]
@@ -683,7 +820,11 @@ export function rssProxyPlugin(): PluginOption {
                 clearTimeout(timeout)
                 if (rsshubRes.ok) {
                   const text = await rsshubRes.text()
-                  if (text.includes("<rss") || text.includes("<feed") || text.includes("<?xml")) {
+                  const isXml =
+                    text.includes("<rss") || text.includes("<feed") || text.includes("<?xml")
+                  // Reject responses that look like XML but contain known error markers
+                  const hasErrorMarker = /not yet whitelisted|Rate limit|suspended/i.test(text)
+                  if (isXml && !hasErrorMarker) {
                     xml = text
                     break
                   }
@@ -705,6 +846,7 @@ export function rssProxyPlugin(): PluginOption {
             for (const entry of result.entries) {
               entry.url = normalizeNitterUrl(entry.url)
             }
+            cacheFeedResult(result.feed, result.entries, "推特")
             res.writeHead(200, {
               "Content-Type": "application/json",
               "Access-Control-Allow-Origin": "*",
@@ -746,6 +888,16 @@ export function rssProxyPlugin(): PluginOption {
 
           const xml = await response.text()
           const result = parseRssFeed(xml, url, limit ?? (lite ? 8 : RSS_ENTRY_LIMIT))
+
+          // Infer category from URL for cache
+          const feedCategory = /xueqiu/i.test(url)
+            ? "雪球"
+            : /weibo/i.test(url)
+              ? "微博"
+              : /mp\.weixin/i.test(url)
+                ? "公众号"
+                : null
+          cacheFeedResult(result.feed, result.entries, feedCategory)
 
           res.writeHead(200, {
             "Content-Type": "application/json",
@@ -1035,6 +1187,135 @@ export function rssProxyPlugin(): PluginOption {
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : "Unknown error"
           res.writeHead(502, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /api/public/subscriptions — Read-only feed list for visitors ───
+      server.middlewares.use("/api/public/subscriptions", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "GET") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const manifest = readManifest()
+          const feeds = Object.values(manifest.feeds).sort(
+            (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+          )
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=60",
+          })
+          res.end(JSON.stringify({ feeds, updatedAt: manifest.updatedAt }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(500, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /api/public/entries — Read-only entries for visitors ───
+      server.middlewares.use("/api/public/entries", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "GET") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const parsedUrl = new URL(req.url ?? "/", "http://localhost")
+          const feedId = parsedUrl.searchParams.get("feedId")
+          const limitParam = parsedUrl.searchParams.get("limit")
+          const entryLimit = limitParam ? Number.parseInt(limitParam, 10) : 50
+
+          if (feedId) {
+            // Single feed's entries
+            const entriesFile = join(cacheDir, "entries", `${feedId}.json`)
+            if (!existsSync(entriesFile)) {
+              res.writeHead(200, {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*",
+              })
+              res.end(JSON.stringify({ entries: [] }))
+              return
+            }
+            const entries: CachedEntry[] = JSON.parse(readFileSync(entriesFile, "utf-8"))
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+              "Cache-Control": "public, max-age=60",
+            })
+            res.end(JSON.stringify({ entries: entries.slice(0, entryLimit) }))
+          } else {
+            // All entries across all feeds, sorted by publishedAt
+            const manifest = readManifest()
+            const allEntries: CachedEntry[] = []
+            for (const feedKey of Object.keys(manifest.feeds)) {
+              const entriesFile = join(cacheDir, "entries", `${feedKey}.json`)
+              if (!existsSync(entriesFile)) continue
+              try {
+                const feedEntries: CachedEntry[] = JSON.parse(readFileSync(entriesFile, "utf-8"))
+                allEntries.push(...feedEntries)
+              } catch {
+                /* skip corrupted files */
+              }
+            }
+            allEntries.sort(
+              (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
+            )
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+              "Cache-Control": "public, max-age=60",
+            })
+            res.end(JSON.stringify({ entries: allEntries.slice(0, entryLimit) }))
+          }
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(500, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /api/public/feed-with-entries — Single feed + its entries (convenience) ───
+      server.middlewares.use("/api/public/feed-with-entries", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "GET") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const manifest = readManifest()
+          const feeds = Object.values(manifest.feeds)
+          const result: { feed: CachedFeed; entries: CachedEntry[] }[] = []
+          for (const feed of feeds) {
+            const entriesFile = join(cacheDir, "entries", `${feed.id}.json`)
+            let entries: CachedEntry[] = []
+            if (existsSync(entriesFile)) {
+              try {
+                entries = JSON.parse(readFileSync(entriesFile, "utf-8"))
+              } catch {
+                /* skip */
+              }
+            }
+            result.push({ feed, entries: entries.slice(0, 5) })
+          }
+          result.sort(
+            (a, b) => new Date(b.feed.updatedAt).getTime() - new Date(a.feed.updatedAt).getTime(),
+          )
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=60",
+          })
+          res.end(JSON.stringify({ data: result, updatedAt: manifest.updatedAt }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(500, { "Content-Type": "application/json" })
           res.end(JSON.stringify({ error: message }))
         }
       })

@@ -101,7 +101,7 @@ export default ({ mode }) => {
     server: {
       host: true,
       port: 2233,
-      allowedHosts: "all",
+      allowedHosts: true,
       watch: {
         ignored: ["**/dist/**", "**/out/**", "**/public/**", ".git/**", "**/.env", "**/.env.*"],
       },
