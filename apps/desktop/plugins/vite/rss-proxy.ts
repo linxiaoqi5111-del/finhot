@@ -1319,8 +1319,204 @@ export function rssProxyPlugin(): PluginOption {
           res.end(JSON.stringify({ error: message }))
         }
       })
+
+      // ─── /public — Self-contained public reader HTML (no Vite modules needed) ───
+      server.middlewares.use("/public", async (_req, res) => {
+        const manifest = readManifest()
+        const feeds = Object.values(manifest.feeds).sort(
+          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+        )
+        // Pre-load all entries
+        const entriesByFeed: Record<string, CachedEntry[]> = {}
+        for (const feed of feeds) {
+          const entriesFile = join(cacheDir, "entries", `${feed.id}.json`)
+          if (existsSync(entriesFile)) {
+            try {
+              entriesByFeed[feed.id] = JSON.parse(readFileSync(entriesFile, "utf-8"))
+            } catch {
+              /* skip */
+            }
+          }
+        }
+        const allEntries = Object.values(entriesByFeed)
+          .flat()
+          .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
+          .slice(0, 100)
+
+        const feedsJson = JSON.stringify(feeds)
+        const entriesByFeedJson = JSON.stringify(entriesByFeed)
+        const allEntriesJson = JSON.stringify(allEntries)
+
+        const html = buildPublicPageHtml(feedsJson, entriesByFeedJson, allEntriesJson)
+        res.writeHead(200, {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "public, max-age=30",
+        })
+        res.end(html)
+      })
     },
   }
+}
+
+// ─── Self-contained public reader HTML ───
+function buildPublicPageHtml(
+  feedsJson: string,
+  entriesByFeedJson: string,
+  allEntriesJson: string,
+): string {
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinHot - 金融热词雷达</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#f5f5f5;color:#1a1a1a;line-height:1.6}
+@media(prefers-color-scheme:dark){body{background:#0a0a0a;color:#e5e5e5}}
+.app{display:flex;height:100vh;overflow:hidden}
+.sidebar{width:260px;flex-shrink:0;background:rgba(255,255,255,0.92);backdrop-filter:blur(20px);border-right:1px solid rgba(0,0,0,0.08);display:flex;flex-direction:column;overflow:hidden}
+@media(prefers-color-scheme:dark){.sidebar{background:rgba(28,28,30,0.92);border-right-color:rgba(255,255,255,0.08)}}
+.sidebar-header{padding:16px 16px 12px;border-bottom:1px solid rgba(0,0,0,0.06);flex-shrink:0}
+@media(prefers-color-scheme:dark){.sidebar-header{border-bottom-color:rgba(255,255,255,0.06)}}
+.sidebar-header h1{font-size:16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.sidebar-header .badge{font-size:10px;font-weight:600;background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:12px}
+@media(prefers-color-scheme:dark){.sidebar-header .badge{background:rgba(37,99,235,0.15);color:#60a5fa}}
+.feed-list{flex:1;overflow-y:auto;padding:8px}
+.feed-btn{display:flex;align-items:center;gap:8px;width:100%;padding:6px 10px;border:none;background:none;border-radius:8px;cursor:pointer;font-size:13px;color:#525252;text-align:left;transition:all 0.15s}
+.feed-btn:hover{background:rgba(0,0,0,0.04)}
+@media(prefers-color-scheme:dark){.feed-btn{color:#a3a3a3}.feed-btn:hover{background:rgba(255,255,255,0.06)}}
+.feed-btn.active{background:#eff6ff;color:#1d4ed8;font-weight:500}
+@media(prefers-color-scheme:dark){.feed-btn.active{background:rgba(37,99,235,0.15);color:#60a5fa}}
+.feed-icon{width:20px;height:20px;border-radius:4px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background:#e5e5e5;color:#525252}
+@media(prefers-color-scheme:dark){.feed-icon{background:#404040;color:#d4d4d4}}
+.feed-icon.twitter{background:#0a0a0a;color:#fff;font-size:11px;font-weight:800}
+@media(prefers-color-scheme:dark){.feed-icon.twitter{background:#e5e5e5;color:#0a0a0a}}
+.cat-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:#a3a3a3;padding:12px 10px 4px}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.topbar{height:52px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid rgba(0,0,0,0.06);background:rgba(255,255,255,0.8);backdrop-filter:blur(12px)}
+@media(prefers-color-scheme:dark){.topbar{border-bottom-color:rgba(255,255,255,0.06);background:rgba(28,28,30,0.8)}}
+.topbar h2{font-size:14px;font-weight:600}
+.topbar .count{font-size:12px;color:#a3a3a3}
+.toggle-btn{width:32px;height:32px;border:none;background:none;border-radius:8px;cursor:pointer;color:#737373;display:flex;align-items:center;justify-content:center;transition:background 0.15s}
+.toggle-btn:hover{background:rgba(0,0,0,0.05)}
+@media(prefers-color-scheme:dark){.toggle-btn:hover{background:rgba(255,255,255,0.08)}}
+.entries{flex:1;overflow-y:auto;padding:16px}
+.entries-inner{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
+.entry{display:block;padding:14px 16px;border-radius:12px;border:1px solid rgba(0,0,0,0.06);background:rgba(255,255,255,0.85);text-decoration:none;color:inherit;transition:all 0.2s}
+.entry:hover{border-color:rgba(0,0,0,0.12);box-shadow:0 1px 4px rgba(0,0,0,0.04)}
+@media(prefers-color-scheme:dark){.entry{border-color:rgba(255,255,255,0.06);background:rgba(38,38,38,0.85)}.entry:hover{border-color:rgba(255,255,255,0.12)}}
+.entry-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:#a3a3a3;margin-bottom:4px}
+.entry-meta .dot{color:#d4d4d4}
+@media(prefers-color-scheme:dark){.entry-meta .dot{color:#525252}}
+.entry-title{font-size:14px;font-weight:600;line-height:1.4;color:#171717;margin-bottom:2px}
+.entry:hover .entry-title{color:#2563eb}
+@media(prefers-color-scheme:dark){.entry-title{color:#f5f5f5}.entry:hover .entry-title{color:#60a5fa}}
+.entry-desc{font-size:13px;color:#737373;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.5}
+@media(prefers-color-scheme:dark){.entry-desc{color:#a3a3a3}}
+.empty{display:flex;align-items:center;justify-content:center;height:100%;color:#a3a3a3;font-size:14px}
+.feed-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:640px){.sidebar{position:fixed;left:0;top:0;bottom:0;z-index:50;transform:translateX(-100%);transition:transform 0.25s}.sidebar.open{transform:translateX(0)}.overlay{display:none;position:fixed;inset:0;z-index:40;background:rgba(0,0,0,0.3)}.overlay.open{display:block}}
+</style>
+</head>
+<body>
+<div class="app" id="app">
+<aside class="sidebar" id="sidebar">
+<div class="sidebar-header">
+<h1>FinHot <span class="badge" id="feed-count"></span></h1>
+</div>
+<div class="feed-list" id="feed-list"></div>
+</aside>
+<div class="overlay" id="overlay"></div>
+<div class="main">
+<div class="topbar">
+<button class="toggle-btn" id="toggle-btn" aria-label="Toggle sidebar">
+<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+</button>
+<h2 id="topbar-title">全部文章</h2>
+<span class="count" id="topbar-count"></span>
+</div>
+<div class="entries" id="entries-container">
+<div class="entries-inner" id="entries-list"></div>
+</div>
+</div>
+</div>
+<script>
+(function(){
+var feeds=${feedsJson};
+var entriesByFeed=${entriesByFeedJson};
+var allEntries=${allEntriesJson};
+var selectedFeedId=null;
+var feedMap={};
+feeds.forEach(function(f){feedMap[f.id]=f});
+
+function timeAgo(d){var diff=Date.now()-new Date(d).getTime();var m=Math.floor(diff/60000);if(m<1)return"刚刚";if(m<60)return m+"分钟前";var h=Math.floor(m/60);if(h<24)return h+"小时前";var days=Math.floor(h/24);if(days<30)return days+"天前";return new Date(d).toLocaleDateString("zh-CN")}
+function stripHtml(s){var t=document.createElement("div");t.innerHTML=s;return t.textContent||""}
+function groupByCategory(fs){var g={};fs.forEach(function(f){var c=f.category||"其他";if(!g[c])g[c]=[];g[c].push(f)});return g}
+function escapeHtml(s){return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+
+document.getElementById("feed-count").textContent=feeds.length+" 订阅";
+
+function renderSidebar(){
+var html='<button class="feed-btn'+(selectedFeedId===null?" active":"")+'" data-id="__all__">'+
+'<span class="feed-icon">📡</span><span class="feed-name">全部</span></button>';
+var groups=groupByCategory(feeds);
+for(var cat in groups){
+html+='<div class="cat-label">'+escapeHtml(cat)+'</div>';
+groups[cat].forEach(function(f){
+var isTwitter=f.url.indexOf("twitter")>=0;
+var icon=isTwitter?'<span class="feed-icon twitter">𝕏</span>':
+'<span class="feed-icon">'+escapeHtml((f.title||"?").charAt(0))+'</span>';
+html+='<button class="feed-btn'+(selectedFeedId===f.id?" active":"")+'" data-id="'+escapeHtml(f.id)+'">'+
+icon+'<span class="feed-name">'+escapeHtml(f.title||f.url)+'</span></button>';
+});
+}
+document.getElementById("feed-list").innerHTML=html;
+}
+
+function renderEntries(){
+var entries=selectedFeedId?((entriesByFeed[selectedFeedId]||[]).slice(0,50)):allEntries;
+document.getElementById("topbar-title").textContent=selectedFeedId?(feedMap[selectedFeedId]?feedMap[selectedFeedId].title||"订阅":"订阅"):"全部文章";
+document.getElementById("topbar-count").textContent=entries.length+" 条";
+if(entries.length===0){document.getElementById("entries-list").innerHTML='<div class="empty">暂无内容</div>';return}
+var html="";
+entries.forEach(function(e){
+var snippet=stripHtml(e.description||e.content||"").slice(0,200);
+var feedTitle=selectedFeedId?null:(feedMap[e.feedId]?feedMap[e.feedId].title:null);
+html+='<a class="entry" href="'+(e.url||"#")+'" target="_blank" rel="noopener noreferrer">'+
+'<div class="entry-meta">'+(feedTitle?'<span>'+escapeHtml(feedTitle)+'</span><span class="dot">·</span>':'')+
+'<span>'+timeAgo(e.publishedAt)+'</span>'+(e.author?'<span class="dot">·</span><span>'+escapeHtml(e.author)+'</span>':'')+
+'</div>'+(e.title?'<div class="entry-title">'+escapeHtml(e.title)+'</div>':'')+
+(snippet?'<div class="entry-desc">'+escapeHtml(snippet)+'</div>':'')+
+'</a>';
+});
+document.getElementById("entries-list").innerHTML=html;
+document.getElementById("entries-container").scrollTop=0;
+}
+
+document.getElementById("feed-list").addEventListener("click",function(ev){
+var btn=ev.target.closest(".feed-btn");if(!btn)return;
+var id=btn.getAttribute("data-id");
+selectedFeedId=id==="__all__"?null:id;
+renderSidebar();renderEntries();
+if(window.innerWidth<=640){document.getElementById("sidebar").classList.remove("open");document.getElementById("overlay").classList.remove("open")}
+});
+
+document.getElementById("toggle-btn").addEventListener("click",function(){
+var sb=document.getElementById("sidebar");var ov=document.getElementById("overlay");
+if(window.innerWidth<=640){sb.classList.toggle("open");ov.classList.toggle("open")}
+else{sb.style.display=sb.style.display==="none"?"":"none"}
+});
+document.getElementById("overlay").addEventListener("click",function(){
+document.getElementById("sidebar").classList.remove("open");
+document.getElementById("overlay").classList.remove("open");
+});
+
+renderSidebar();renderEntries();
+})();
+</script>
+</body>
+</html>`
 }
 
 /**
