@@ -13,7 +13,7 @@ export const defaultGeneralSettings: GeneralSettings = {
   summary: true,
   autoTag: true,
   qualityScore: true,
-  qualityScoreThreshold: 40,
+  qualityScoreThreshold: 0,
   actionLanguage: "default",
 
   sendAnonymousData: true,

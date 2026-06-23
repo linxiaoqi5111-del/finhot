@@ -15,7 +15,7 @@ import { sortEntryIdsByRecommended } from "@follow/store/entry/sort"
 import { entryActions, entrySyncServices, useEntryStore } from "@follow/store/entry/store"
 import type { UseEntriesReturn } from "@follow/store/entry/types"
 import { fallbackReturn } from "@follow/store/entry/utils"
-import { useEntryQualityScoreStore } from "@follow/store/entry-quality-score/store"
+// import { useEntryQualityScoreStore } from "@follow/store/entry-quality-score/store"
 import { useEntryRankScoreStore } from "@follow/store/entry-rank-score/store"
 import { useEntryAiTagsStore } from "@follow/store/entry-tags/store"
 import { getFeedById } from "@follow/store/feed/getter"
@@ -54,7 +54,7 @@ import { aiTimelineEnabledAtom } from "../atoms/ai-timeline"
 import { getPlatformForFeed, usePlatformFilter } from "../atoms/platform-filter"
 import { recommendedTimelineEnabledAtom } from "../atoms/recommended-timeline"
 import { getVisibleLocalEntryIds } from "./filter-local-entry-ids"
-import { filterByAdmissionThreshold } from "./social-platform-admission"
+// import { filterByAdmissionThreshold } from "./social-platform-admission"
 import { useEntryClusters } from "./use-entry-clusters"
 import { useIsPreviewFeed } from "./useIsPreviewFeed"
 
@@ -316,8 +316,8 @@ const useLocalEntries = (): UseEntriesReturn => {
     }
   }, [allEntries, effectiveUnreadOnly, localQueryKey])
 
-  const qualityScoreThreshold = useGeneralSettingKey("qualityScoreThreshold")
-  const qualityScores = useEntryQualityScoreStore((state) => state.data)
+  // const qualityScoreThreshold = useGeneralSettingKey("qualityScoreThreshold")
+  // const qualityScores = useEntryQualityScoreStore((state) => state.data)
 
   const sortedEntries = useMemo(() => {
     void rankingRevision
@@ -329,21 +329,8 @@ const useLocalEntries = (): UseEntriesReturn => {
     return sortEntryIdsByRecommended(latestEntries)
   }, [allEntries, isVirtualScope, rankingRevision, recommendedTimelineEnabled])
 
-  const admittedEntries = useMemo(() => {
-    if (!qualityScoreThreshold || qualityScoreThreshold <= 0) return sortedEntries
-
-    return filterByAdmissionThreshold({
-      entryIds: sortedEntries,
-      threshold: qualityScoreThreshold,
-      qualityScores,
-      getEntryFeedUrl: (entryId) => {
-        const entries = entryActions.getFlattenMapEntries()
-        const entry = entries[entryId]
-        if (!entry?.feedId) return null
-        return getFeedById(entry.feedId)?.url
-      },
-    })
-  }, [sortedEntries, qualityScoreThreshold, qualityScores])
+  // Admission threshold disabled until enough data for score distribution analysis
+  const admittedEntries = sortedEntries
 
   // Platform filter: filter entries by source platform tab
   const platformFilter = usePlatformFilter()
@@ -351,11 +338,15 @@ const useLocalEntries = (): UseEntriesReturn => {
     if (platformFilter === "all") return admittedEntries
 
     return admittedEntries.filter((entryId) => {
-      const entries = entryActions.getFlattenMapEntries()
-      const entry = entries[entryId]
-      if (!entry?.feedId) return false
-      const feedUrl = getFeedById(entry.feedId)?.url
-      return getPlatformForFeed(entry.feedId, feedUrl) === platformFilter
+      try {
+        const entries = entryActions.getFlattenMapEntries()
+        const entry = entries[entryId]
+        if (!entry?.feedId) return false
+        const feedUrl = getFeedById(entry.feedId)?.url
+        return getPlatformForFeed(entry.feedId, feedUrl) === platformFilter
+      } catch {
+        return false
+      }
     })
   }, [admittedEntries, platformFilter])
 
