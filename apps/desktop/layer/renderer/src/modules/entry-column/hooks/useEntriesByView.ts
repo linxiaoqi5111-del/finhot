@@ -231,21 +231,30 @@ const useLocalEntries = (): UseEntriesReturn => {
   const allEntries = useEntryStore(
     useCallback(
       (state) => {
-        const ids =
-          smartFeed === "starred"
-            ? allCollectionEntryIds
-            : isVirtualScope
-              ? (entryIdsByView ?? [])
-              : isCollection
-                ? entryIdsByCollections
-                : showEntriesByView
-                  ? (entryIdsByView ?? [])
-                  : (getEntryIdsFromMultiplePlace(
-                      entryIdsByFeedId,
-                      entryIdsByCategory,
-                      entryIdsByListId,
-                      entryIdsByInboxId,
-                    ) ?? [])
+        let ids: string[]
+        if (smartFeed === "starred") {
+          ids = allCollectionEntryIds ?? []
+        } else if (isVirtualScope) {
+          ids = entryIdsByView ?? []
+        } else if (isCollection) {
+          ids = entryIdsByCollections ?? []
+        } else if (showEntriesByView) {
+          // In LOCAL_RSS_MODE, entryIdByView may be empty due to hydration race
+          // (entries hydrate before subscriptions). Fall back to all entry IDs.
+          if (LOCAL_RSS_MODE && (!entryIdsByView || entryIdsByView.length === 0)) {
+            ids = Array.from(state.entryIdSet)
+          } else {
+            ids = entryIdsByView ?? []
+          }
+        } else {
+          ids =
+            getEntryIdsFromMultiplePlace(
+              entryIdsByFeedId,
+              entryIdsByCategory,
+              entryIdsByListId,
+              entryIdsByInboxId,
+            ) ?? []
+        }
 
         const stickyVisibleIds =
           effectiveUnreadOnly && stickyVisibleStateRef.current.queryKey === localQueryKey
