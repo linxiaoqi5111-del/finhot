@@ -72,22 +72,7 @@ const PLATFORMS: Platform[] = [
       return `finhot://twitter/${handle}`
     },
   },
-  {
-    id: "zhihu",
-    label: "知乎",
-    icon: "🔵",
-    placeholder: "输入用户 ID（如 excited-vczh）",
-    hint: "知乎个人主页 URL 中 /people/ 后面的 ID",
-    buildUrl: (id: string) => `${LOCAL_RSSHUB_BASE}/zhihu/people/activities/${id.trim()}`,
-  },
-  {
-    id: "bilibili",
-    label: "B站",
-    icon: "🩵",
-    placeholder: "输入 UP主 UID（如 546195）",
-    hint: "B站个人空间 URL 中的数字",
-    buildUrl: (uid: string) => `${LOCAL_RSSHUB_BASE}/bilibili/user/video/${uid.trim()}`,
-  },
+
   {
     id: "wechat",
     label: "公众号",
