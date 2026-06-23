@@ -2,7 +2,7 @@ import { IN_ELECTRON, PROD } from "@follow/shared/constants"
 import { preventDefault } from "@follow/utils/dom"
 import type { PropsWithChildren } from "react"
 import * as React from "react"
-import { Suspense, useEffect, useRef, useState } from "react"
+import { Suspense, useRef, useState } from "react"
 import { Outlet } from "react-router"
 
 import { setMainContainerElement, setRootContainerElement } from "~/atoms/dom"
@@ -132,35 +132,12 @@ const errorTypes = [
  * // This component is automatically rendered by React Router
  * // based on the route configuration in generated-routes.ts
  */
-const FINHOT_ONBOARDING_KEY = "finhot:onboarding:completed"
+const _FINHOT_ONBOARDING_KEY = "finhot:onboarding:completed"
 
 export function MainDestopLayout() {
   const containerRef = useRef<HTMLDivElement | null>(null)
 
-  // FinHot onboarding: show on first launch
-  useEffect(() => {
-    const completed = window.localStorage.getItem(FINHOT_ONBOARDING_KEY)
-    if (completed) return
-
-    import("~/modules/finhot-onboarding/FinHotOnboarding").then((mod) => {
-      window.presentModal({
-        title: "FinHot 金融信息源配置",
-        content: ({ dismiss }) => (
-          <mod.FinHotOnboarding
-            onClose={() => {
-              window.localStorage.setItem(FINHOT_ONBOARDING_KEY, "1")
-              dismiss()
-            }}
-          />
-        ),
-        CustomModalComponent: PlainModal,
-        modalContainerClassName: "flex items-center justify-center",
-        canClose: true,
-        clickOutsideToDismiss: false,
-        overlay: true,
-      })
-    })
-  }, [])
+  // FinHot onboarding disabled — user manages subscriptions manually via AddBloggerPanel
 
   return (
     <RootContainer ref={containerRef}>

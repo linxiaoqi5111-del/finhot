@@ -5,7 +5,11 @@ import { useSyncExternalStore } from "react"
 
 import { getGeneralSettings } from "~/atoms/settings/general"
 
-import { refreshAllLocalRssFeeds, seedDefaultLocalRssFeedsIfNeeded } from "./service"
+import {
+  cleanupDefaultFeedsIfNeeded,
+  refreshAllLocalRssFeeds,
+  seedDefaultLocalRssFeedsIfNeeded,
+} from "./service"
 
 export const RSS_REFRESH_INTERVAL_OPTIONS = [
   15, 30, 60, 120,
@@ -165,6 +169,8 @@ export async function runLocalRssStartup(): Promise<{
   emit()
 
   try {
+    await cleanupDefaultFeedsIfNeeded()
+
     const seedResult = await seedDefaultLocalRssFeedsIfNeeded()
     if (seedResult.seeded) {
       markRefreshed()

@@ -1,4 +1,4 @@
-import { FeedViewType } from "@follow/constants"
+import { FeedViewType, PRESET_FINANCE_FEEDS } from "@follow/constants"
 import type { CollectionSchema, EntrySchema, FeedSchema } from "@follow/database/schemas/types"
 import { applyLocalActionRulesToEntry, runLocalActionSideEffects } from "@follow/store/action/local"
 import { useActionStore } from "@follow/store/action/store"
@@ -28,13 +28,7 @@ import { fetchAccountNameAfterAdd } from "~/modules/wechat2rss/service"
 import { isSupportedLocalRssUrl, LOCAL_RSS_URL_MESSAGE } from "./url"
 
 export const LOCAL_RSS_DEFAULT_FEEDS_SEEDED_KEY = "local-rss:default-feeds-seeded"
-export const DEFAULT_LOCAL_RSS_FEED_URLS = [
-  "https://api.xgo.ing/rss/user/edf707b5c0b248579085f66d7a3c5524",
-  "https://rsshub.bestblogs.dev/xiaoyuzhou/podcast/626b46ea9cbbf0451cf5a962",
-  "https://wechat2rss.bestblogs.dev/feed/c442206ec9957f3c52f2f40300ca532079538b31.xml",
-  "https://www.youtube.com/feeds/videos.xml?channel_id=UCcefcZRL2oaA_uBNeo5UOWg",
-  "https://1q43.blog/feed",
-] as const
+export const DEFAULT_LOCAL_RSS_FEED_URLS = [] as const
 
 const toDate = (value: Date | string | null | undefined) => {
   if (!value) return null
@@ -480,6 +474,43 @@ const hasExistingLocalRssSubscriptions = () =>
   Object.values(useSubscriptionStore.getState().data).some(
     (subscription) => subscription.type === "feed" && !!subscription.feedId,
   )
+
+const DEFAULTS_CLEANED_KEY = "finhot:defaults-cleaned"
+
+/**
+ * One-time cleanup: remove all preset/default finance feeds.
+ * Keeps only user-added subscriptions (via AddBloggerPanel).
+ */
+export async function cleanupDefaultFeedsIfNeeded(): Promise<void> {
+  try {
+    if (localStorage.getItem(DEFAULTS_CLEANED_KEY) === "1") return
+  } catch {
+    return
+  }
+
+  const presetUrls = new Set(PRESET_FINANCE_FEEDS.map((f) => f.url))
+  const state = useSubscriptionStore.getState()
+  const idsToRemove: string[] = []
+
+  for (const [id, sub] of Object.entries(state.data)) {
+    if (!sub?.feedId) continue
+    const feed = getFeedByIdOrUrl({ id: sub.feedId })
+    if (!feed?.url) continue
+    if (presetUrls.has(feed.url)) {
+      idsToRemove.push(id)
+    }
+  }
+
+  if (idsToRemove.length > 0) {
+    await subscriptionActions.unsubscribe(idsToRemove)
+  }
+
+  try {
+    localStorage.setItem(DEFAULTS_CLEANED_KEY, "1")
+  } catch {
+    // ignore
+  }
+}
 
 export async function seedDefaultLocalRssFeedsIfNeeded(): Promise<{
   seeded: boolean
