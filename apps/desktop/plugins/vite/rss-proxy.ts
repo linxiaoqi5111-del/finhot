@@ -1612,6 +1612,13 @@ a{color:inherit;text-decoration:none}
 .feed-list{flex:1;overflow-y:auto;padding:0 8px 8px;scrollbar-width:thin;scrollbar-color:color-mix(in srgb, rgba(var(--color-text)) 10%, transparent) transparent}
 .feed-list::-webkit-scrollbar{width:4px}
 .feed-list::-webkit-scrollbar-thumb{background:color-mix(in srgb, rgba(var(--color-text)) 10%, transparent);border-radius:4px}
+.cat-header{display:flex;align-items:center;gap:6px;padding:8px 10px 4px;cursor:pointer;user-select:none;border:none;background:none;width:100%;text-align:left;font-family:inherit}
+.cat-header .cat-arrow{width:12px;height:12px;flex-shrink:0;transition:transform 0.15s;color:color-mix(in srgb, rgba(var(--color-textTertiary)) 100%, transparent)}
+.cat-header .cat-arrow.collapsed{transform:rotate(-90deg)}
+.cat-header .cat-label{font-size:11px;font-weight:600;color:color-mix(in srgb, rgba(var(--color-textSecondary)) 100%, transparent)}
+.cat-header .cat-count{font-size:10px;color:color-mix(in srgb, rgba(var(--color-textTertiary)) 100%, transparent);margin-left:auto}
+.cat-feeds{overflow:hidden;transition:max-height 0.2s ease}
+.cat-feeds.collapsed{max-height:0 !important;overflow:hidden}
 .sidebar-footer{padding:10px 16px;border-top:1px solid hsl(var(--border));font-size:10px;color:color-mix(in srgb, rgba(var(--color-textTertiary)) 100%, transparent)}
 .theme-row{display:flex;gap:4px;margin-top:6px}
 .theme-btn{width:26px;height:26px;border:1px solid hsl(var(--border));border-radius:6px;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:color-mix(in srgb, rgba(var(--color-textTertiary)) 100%, transparent);transition:all 0.15s}
@@ -1817,13 +1824,41 @@ function getPlatform(feedUrl,cat){
   return"other";
 }
 
-// ── Sidebar feed list ──
-function renderFeeds(){
-  var html="";
+// ── Sidebar feed list (grouped by category) ──
+var collapsedCats={};
+var CAT_ORDER=["\u5fae\u535a","\u63a8\u7279","\u96ea\u7403","\u516c\u4f17\u53f7","\u5176\u4ed6"];
+var CAT_ICONS={"\u5fae\u535a":'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>',"\u63a8\u7279":'<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>',"\u96ea\u7403":'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',"\u516c\u4f17\u53f7":'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',"\u5176\u4ed6":'<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>'};
+function groupFeeds(){
+  var groups={};var order=[];
   feeds.forEach(function(f){
-    var platform=getPlatform(f.url,f.category);
-    var icon=(platform==="twitter")?'<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>':'<span>'+esc(feedInitial(f.title))+'</span>';
-    html+='<button class="nav-item'+(selectedFeedId===f.id?" active":"")+'" data-id="'+esc(f.id)+'"><div class="card-feed-icon">'+icon+'</div><span class="feed-name">'+esc(f.title||f.url)+'</span></button>';
+    var cat=f.category||"\u5176\u4ed6";
+    if(!groups[cat]){groups[cat]=[];order.push(cat)}
+    groups[cat].push(f);
+  });
+  order.sort(function(a,b){var ia=CAT_ORDER.indexOf(a);var ib=CAT_ORDER.indexOf(b);if(ia===-1)ia=99;if(ib===-1)ib=99;return ia-ib});
+  return{groups:groups,order:order};
+}
+function renderFeeds(){
+  var g=groupFeeds();
+  var html="";
+  var arrowSvg='<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  g.order.forEach(function(cat){
+    var list=g.groups[cat];
+    var isCollapsed=!!collapsedCats[cat];
+    var catIcon=CAT_ICONS[cat]||CAT_ICONS["\u5176\u4ed6"];
+    html+='<button class="cat-header" data-cat-toggle="'+esc(cat)+'">';
+    html+='<span class="cat-arrow'+(isCollapsed?' collapsed':'')+'">'+arrowSvg+'</span>';
+    html+=catIcon;
+    html+='<span class="cat-label">'+esc(cat)+'</span>';
+    html+='<span class="cat-count">'+list.length+'</span>';
+    html+='</button>';
+    html+='<div class="cat-feeds'+(isCollapsed?' collapsed':'')+'" data-cat-group="'+esc(cat)+'">';
+    list.forEach(function(f){
+      var platform=getPlatform(f.url,f.category);
+      var icon=(platform==="twitter")?'<svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>':'<span>'+esc(feedInitial(f.title))+'</span>';
+      html+='<button class="nav-item'+(selectedFeedId===f.id?" active":"")+'" data-id="'+esc(f.id)+'"><div class="card-feed-icon">'+icon+'</div><span class="feed-name">'+esc(f.title||f.url)+'</span></button>';
+    });
+    html+='</div>';
   });
   document.getElementById("feed-list").innerHTML=html;
   var allBtn=document.querySelector('.nav-item[data-id="__all__"]');
@@ -1925,6 +1960,16 @@ function renderTimeline(){
 
 // ── Events ──
 document.addEventListener("click",function(ev){
+  var catToggle=ev.target.closest(".cat-header");
+  if(catToggle){
+    var cat=catToggle.getAttribute("data-cat-toggle");
+    collapsedCats[cat]=!collapsedCats[cat];
+    var arrow=catToggle.querySelector(".cat-arrow");
+    var group=document.querySelector('.cat-feeds[data-cat-group="'+cat+'"]');
+    if(arrow)arrow.classList.toggle("collapsed");
+    if(group)group.classList.toggle("collapsed");
+    return;
+  }
   var navItem=ev.target.closest(".nav-item");
   if(navItem){
     var id=navItem.getAttribute("data-id");
