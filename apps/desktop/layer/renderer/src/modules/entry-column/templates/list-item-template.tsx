@@ -28,6 +28,14 @@ import { StarIcon } from "../star-icon"
 import type { UniversalItemProps } from "../types"
 import { getListItemLineClampClassNames } from "./list-item-line-clamp"
 
+/**
+ * Card-based entry item with AIHOT-inspired visual hierarchy:
+ * - Source + time header row
+ * - Bold title
+ * - Summary description
+ * - Tags + score badge footer
+ */
+
 const entrySelector = (state: EntryModel) => {
   /// keep-sorted
   const { authorAvatar, authorUrl, description, feedId, inboxHandle, publishedAt, title } = state
@@ -139,84 +147,80 @@ export function ListItem({
   return (
     <div
       className={cn(
-        "group relative flex cursor-menu py-3.5",
-        !isRead &&
-          "before:absolute before:-left-3 before:top-5 before:block before:size-2 before:rounded-full before:bg-accent",
+        "group relative mx-2 my-1.5 rounded-xl border border-border/60 bg-fill-quaternary/50 px-4 py-3 transition-colors",
+        !isRead && "border-l-2 border-l-accent",
+        isRead && dimRead && "opacity-75",
       )}
     >
-      {showFeedIcon && <FeedIcon target={related} fallback entry={iconEntry} size={24} />}
-      <div
-        className={cn(
-          "-mt-0.5 min-w-0 flex-1 text-sm leading-tight",
-          showFeedIcon ? "ml-1" : "ml-0",
-          lineClamp.global,
+      {/* Header: source icon + name + time + score */}
+      <div className="flex items-center gap-2">
+        {showFeedIcon && <FeedIcon target={related} fallback entry={iconEntry} size={18} />}
+        <EllipsisHorizontalTextWithTooltip
+          className={cn("min-w-0 flex-1 truncate text-[11px] font-semibold", "text-text-secondary")}
+        >
+          <FeedTitle
+            feed={related}
+            title={getPreferredTitle(related, titleEntry)}
+            className="space-x-0.5"
+          />
+        </EllipsisHorizontalTextWithTooltip>
+        {!!displayTime && (
+          <span className="shrink-0 text-[11px] text-text-tertiary">
+            <RelativeTime date={displayTime} />
+          </span>
         )}
-      >
+        <EntryQualityScoreBadge entryId={entryId} />
+      </div>
+
+      {/* Title */}
+      <div className={cn("mt-1.5 min-w-0", lineClamp.global)}>
         <div
           className={cn(
-            "flex min-w-0 items-center gap-2 text-[10px] font-bold",
-            "text-text-secondary",
-            isInCollection && "text-text-secondary",
-            isRead && dimRead && "text-text-tertiary",
+            "relative break-words text-[14px] font-semibold leading-snug",
+            "text-text",
+            !!isInCollection && "pr-5",
           )}
         >
-          <EllipsisHorizontalTextWithTooltip className="min-w-0 flex-1 truncate">
-            <FeedTitle
-              feed={related}
-              title={getPreferredTitle(related, titleEntry)}
-              className="space-x-0.5"
+          {entry?.title ? (
+            <EntryTranslation
+              className={cn("autospace-normal hyphens-auto", lineClamp.title)}
+              source={titleCase(entry?.title ?? "")}
+              target={titleCase(translation?.title ?? "")}
             />
-          </EllipsisHorizontalTextWithTooltip>
-          {!!displayTime && (
-            <span className="shrink-0">
-              <RelativeTime date={displayTime} />
-            </span>
-          )}
-        </div>
-        <div className="my-0.5 flex items-start gap-2">
-          <div
-            className={cn(
-              "relative min-w-0 flex-1 break-words",
-              "text-text",
-              !!isInCollection && "pr-5",
-              entry?.title ? "font-medium" : "text-[13px]",
-              isRead && dimRead && "text-text-secondary",
-            )}
-          >
-            {entry?.title ? (
-              <EntryTranslation
-                className={cn("autospace-normal hyphens-auto font-medium", lineClamp.title)}
-                source={titleCase(entry?.title ?? "")}
-                target={titleCase(translation?.title ?? "")}
-              />
-            ) : (
-              <EntryTranslation
-                className={cn("autospace-normal hyphens-auto", lineClamp.description)}
-                source={displayDescription}
-                target={isSummary ? undefined : translation?.description}
-              />
-            )}
-            {!!isInCollection && <StarIcon className="absolute right-0 top-0" />}
-          </div>
-          <EntryQualityScoreBadge entryId={entryId} />
-          <EntryClusterBadge entryId={entryId} />
-        </div>
-        <EntryAiTagChips entryId={entryId} />
-        {!simple && (
-          <div
-            className={cn(
-              "text-[13px]",
-              "text-text-secondary",
-              isRead && dimRead && "text-text-tertiary",
-            )}
-          >
+          ) : (
             <EntryTranslation
               className={cn("autospace-normal hyphens-auto", lineClamp.description)}
               source={displayDescription}
               target={isSummary ? undefined : translation?.description}
             />
-          </div>
-        )}
+          )}
+          {!!isInCollection && <StarIcon className="absolute right-0 top-0" />}
+        </div>
+      </div>
+
+      {/* Description / Summary */}
+      {!simple && displayDescription && entry?.title && (
+        <div
+          className={cn(
+            "mt-1 text-[12px] leading-relaxed",
+            "text-text-secondary",
+            lineClamp.global,
+          )}
+        >
+          <EntryTranslation
+            className={cn("autospace-normal line-clamp-2 hyphens-auto")}
+            source={displayDescription}
+            target={isSummary ? undefined : translation?.description}
+          />
+        </div>
+      )}
+
+      {/* Footer: tags + cluster badge */}
+      <div className="mt-1.5 flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <EntryAiTagChips entryId={entryId} />
+        </div>
+        <EntryClusterBadge entryId={entryId} />
       </div>
     </div>
   )

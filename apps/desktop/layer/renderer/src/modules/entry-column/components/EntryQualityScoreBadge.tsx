@@ -14,10 +14,10 @@ import { useTranslation } from "react-i18next"
 import { useGeneralSettingKey } from "~/atoms/settings/general"
 
 const tierClassName: Record<ReturnType<typeof getQualityScoreTier>, string> = {
-  high: "bg-green/15 text-green",
-  medium: "bg-yellow/15 text-yellow",
-  low: "bg-gray/15 text-text-secondary",
-  ignore: "bg-gray/10 text-text-tertiary",
+  high: "bg-green/20 text-green border border-green/30",
+  medium: "bg-yellow/15 text-yellow border border-yellow/20",
+  low: "bg-gray/15 text-text-secondary border border-gray/15",
+  ignore: "bg-gray/10 text-text-tertiary border border-gray/10",
 }
 
 const DIMENSION_KEYS = [

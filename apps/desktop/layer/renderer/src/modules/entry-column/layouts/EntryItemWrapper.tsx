@@ -153,7 +153,6 @@ export const EntryItemWrapper: FC<
   const isWide = !showEntryDetailsColumn
 
   const Link = view === FeedViewType.SocialMedia ? "article" : NavLink
-  const isAll = view === FeedViewType.All
   return (
     <div
       data-entry-id={entry?.id}
@@ -164,10 +163,8 @@ export const EntryItemWrapper: FC<
       <Link
         to={navigationPath}
         className={cn(
-          "relative block cursor-button overflow-visible duration-200 hover:bg-theme-item-hover",
-          !isWide ? "rounded-none @[650px]:rounded-md" : "rounded-md",
-          isAll && "!rounded-none",
-          (isActive || isContextMenuOpen) && "!bg-theme-item-active",
+          "relative block cursor-button overflow-visible duration-200",
+          (isActive || isContextMenuOpen) && "[&>div]:!border-accent/40 [&>div]:!bg-fill-tertiary",
           itemClassName,
         )}
         onClick={handleClick}
