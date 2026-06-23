@@ -29,10 +29,10 @@ export function getPlatformForFeed(
 
   // URL-based detection
   if (feedUrl) {
-    if (/^finhot:\/\/xueqiu\//.test(feedUrl)) return "xueqiu"
-    if (/^finhot:\/\/twitter\//.test(feedUrl)) return "twitter"
-    if (/\/weibo\//.test(feedUrl)) return "weibo"
-    if (/wechat|mp\.weixin/.test(feedUrl)) return "wechat"
+    if (/xueqiu/i.test(feedUrl)) return "xueqiu"
+    if (/twitter|\/x\.com\//i.test(feedUrl)) return "twitter"
+    if (/weibo/i.test(feedUrl)) return "weibo"
+    if (/wechat|mp\.weixin/i.test(feedUrl)) return "wechat"
   }
 
   // Category-based detection (covers wechat2rss feeds whose URL is opaque)
