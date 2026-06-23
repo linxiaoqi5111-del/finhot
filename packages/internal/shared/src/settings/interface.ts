@@ -8,6 +8,8 @@ export interface GeneralSettings {
   summary: boolean
   autoTag: boolean
   qualityScore: boolean
+  /** Quality score threshold (0-100) for social platform feeds. Entries below this are hidden. */
+  qualityScoreThreshold: number
   actionLanguage: string
   sendAnonymousData: boolean
   unreadOnly: boolean

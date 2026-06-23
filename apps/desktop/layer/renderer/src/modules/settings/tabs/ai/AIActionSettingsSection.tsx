@@ -49,6 +49,7 @@ export const AIActionSettingsSection = () => {
           label: t("general.action.quality_score.label"),
           description: t("general.action.quality_score.description"),
         }),
+        QualityScoreThresholdSelector,
         defineSettingItem("translation", {
           label: t("general.action.translation.label"),
           description: t("general.action.translation.description"),
@@ -57,6 +58,41 @@ export const AIActionSettingsSection = () => {
         ActionLanguageSelector,
       ]}
     />
+  )
+}
+
+const QualityScoreThresholdSelector = () => {
+  const { t } = useTranslation("settings")
+  const threshold = useGeneralSettingKey("qualityScoreThreshold")
+
+  return (
+    <SettingItemGroup>
+      <SettingRow
+        label={t("general.action.quality_score_threshold.label", {
+          defaultValue: "社交平台准入阈值",
+        })}
+        description={t("general.action.quality_score_threshold.description", {
+          defaultValue: "推特/微博/雪球动态低于此分数将被过滤",
+        })}
+      >
+        <ResponsiveSelect
+          size="sm"
+          triggerClassName="w-48 shrink-0"
+          defaultValue={String(threshold)}
+          value={String(threshold)}
+          onValueChange={(value) => {
+            setGeneralSetting("qualityScoreThreshold", Number(value))
+          }}
+          items={[
+            { label: "关闭过滤 (0)", value: "0" },
+            { label: "仅过滤极低 (20)", value: "20" },
+            { label: "过滤低质量 (40)", value: "40" },
+            { label: "仅保留中等以上 (60)", value: "60" },
+            { label: "仅保留高质量 (80)", value: "80" },
+          ]}
+        />
+      </SettingRow>
+    </SettingItemGroup>
   )
 }
 

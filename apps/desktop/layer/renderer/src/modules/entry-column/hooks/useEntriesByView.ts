@@ -15,8 +15,10 @@ import { sortEntryIdsByRecommended } from "@follow/store/entry/sort"
 import { entryActions, entrySyncServices, useEntryStore } from "@follow/store/entry/store"
 import type { UseEntriesReturn } from "@follow/store/entry/types"
 import { fallbackReturn } from "@follow/store/entry/utils"
+import { useEntryQualityScoreStore } from "@follow/store/entry-quality-score/store"
 import { useEntryRankScoreStore } from "@follow/store/entry-rank-score/store"
 import { useEntryAiTagsStore } from "@follow/store/entry-tags/store"
+import { getFeedById } from "@follow/store/feed/getter"
 import { useFolderFeedsByFeedId } from "@follow/store/subscription/hooks"
 import { unreadSyncService } from "@follow/store/unread/store"
 import { nextFrame } from "@follow/utils"
@@ -51,6 +53,7 @@ import {
 import { aiTimelineEnabledAtom } from "../atoms/ai-timeline"
 import { recommendedTimelineEnabledAtom } from "../atoms/recommended-timeline"
 import { getVisibleLocalEntryIds } from "./filter-local-entry-ids"
+import { filterByAdmissionThreshold } from "./social-platform-admission"
 import { useEntryClusters } from "./use-entry-clusters"
 import { useIsPreviewFeed } from "./useIsPreviewFeed"
 
@@ -312,6 +315,9 @@ const useLocalEntries = (): UseEntriesReturn => {
     }
   }, [allEntries, effectiveUnreadOnly, localQueryKey])
 
+  const qualityScoreThreshold = useGeneralSettingKey("qualityScoreThreshold")
+  const qualityScores = useEntryQualityScoreStore((state) => state.data)
+
   const sortedEntries = useMemo(() => {
     void rankingRevision
 
@@ -322,7 +328,23 @@ const useLocalEntries = (): UseEntriesReturn => {
     return sortEntryIdsByRecommended(latestEntries)
   }, [allEntries, isVirtualScope, rankingRevision, recommendedTimelineEnabled])
 
-  const { displayIds: clusteredEntries } = useEntryClusters(sortedEntries)
+  const admittedEntries = useMemo(() => {
+    if (!qualityScoreThreshold || qualityScoreThreshold <= 0) return sortedEntries
+
+    return filterByAdmissionThreshold({
+      entryIds: sortedEntries,
+      threshold: qualityScoreThreshold,
+      qualityScores,
+      getEntryFeedUrl: (entryId) => {
+        const entries = entryActions.getFlattenMapEntries()
+        const entry = entries[entryId]
+        if (!entry?.feedId) return null
+        return getFeedById(entry.feedId)?.url
+      },
+    })
+  }, [sortedEntries, qualityScoreThreshold, qualityScores])
+
+  const { displayIds: clusteredEntries } = useEntryClusters(admittedEntries)
 
   const [page, setPage] = useState(0)
   const pageSize = 30
