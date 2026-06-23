@@ -31,7 +31,7 @@ export type RadarTopic = {
 }
 
 const ONE_HOUR = 3600_000
-const SIX_HOURS = 6 * ONE_HOUR
+const EIGHTEEN_HOURS = 18 * ONE_HOUR
 const TWELVE_HOURS = 12 * ONE_HOUR
 const ONE_DAY = 24 * ONE_HOUR
 
@@ -88,8 +88,8 @@ export function useRadarTopics(): { topics: RadarTopic[]; isReady: boolean } {
     if (items.length < 3) return []
 
     // Use a slightly lower threshold for broader topic grouping
-    // maxTimeGap: 6h — entries >6h apart won't cluster even if semantically similar
-    const result = clusterEntries(items, { tau: 0.78, minSize: 2, maxTimeGap: SIX_HOURS })
+    // maxTimeGap: 18h — covers overnight gap (收盘3pm → 次日开盘9:30am)
+    const result = clusterEntries(items, { tau: 0.78, minSize: 2, maxTimeGap: EIGHTEEN_HOURS })
 
     const radarTopics: RadarTopic[] = result.clusters.map((cluster) => {
       const { sourceFeedIds } = cluster
