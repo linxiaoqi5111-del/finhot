@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="zh-CN" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="google" content="notranslate" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover"
+    />
+
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121212" />
+    <!-- favicon -->
+    <link rel="icon" href="/focal-logo.png" sizes="1024x1024" type="image/png" />
+    <link rel="icon" href="/icon.svg" sizes="any" type="image/svg+xml" />
+    <!-- FireFox -->
+    <link rel="shortcut icon" href="/focal-logo.png" type="image/png" />
+    <link rel="apple-touch-icon" href="/focal-logo.png" />
+
+    <title>FinHot - 金融热词雷达</title>
+    <meta
+      name="description"
+      content="FinHot is a local-first RSS reader with BYOK AI features for reading, summarizing, translating, and organizing your feeds."
+    />
+    <meta
+      name="keywords"
+      content="AI reader, RSS reader, feed aggregator, local-first, BYOK AI, content curation, timeline, news reader, feed reader, distraction-free browsing, open source, FinHot, AI translation, AI summary, RSS subscription, feed management, news aggregator, desktop app"
+    />
+    <meta name="author" content="FinHot" />
+    <meta name="robots" content="index, follow" />
+    <meta name="language" content="en" />
+
+    <!-- Apple Meta Tags -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="FinHot" />
+
+    <!-- OpenGraph Meta Tags -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="FinHot" />
+    <meta property="og:title" content="FinHot - 金融热词雷达" />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:alt" content="FinHot - 金融热词雷达" />
+    <meta
+      property="og:description"
+      content="A local-first RSS reader with BYOK AI features for summarizing, translating, and organizing your feeds."
+    />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter Meta Tags -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="FinHot - 金融热词雷达" />
+    <meta
+      name="twitter:description"
+      content="FinHot is a local-first RSS reader with BYOK AI features for summarizing, translating, and organizing your feeds."
+    />
+    <meta name="twitter:image" content="/og-image.png" />
+    <meta name="twitter:image:alt" content="FinHot - 金融热词雷达" />
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "FinHot",
+        "alternateName": "金融热词雷达",
+        "description": "Local-first RSS reader with BYOK AI features for reading, summarizing, translating, and organizing feeds.",
+        "image": "/og-image.png",
+        "applicationCategory": "ProductivityApplication",
+        "operatingSystem": ["macOS", "Windows", "Linux", "Web"],
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "publisher": {
+          "@type": "Organization",
+          "name": "FinHot"
+        },
+        "screenshot": [
+          "https://github.com/user-attachments/assets/11dc7d21-f5d8-4e41-9269-24fc352aa02b",
+          "https://github.com/user-attachments/assets/37cf4f2f-4c5e-4775-86e8-2fa1a1b2ecf5",
+          "https://github.com/user-attachments/assets/d1379fd6-8767-476e-b0dc-d61753715e26"
+        ],
+        "featureList": [
+          "Customized Information Hub",
+          "AI-powered translation and summary",
+          "Dynamic content support (articles, videos, images, audio)",
+          "Distraction-free browsing",
+          "Cross-platform availability",
+          "Open source community-driven"
+        ],
+        "aggregateRating": {
+          "@type": "AggregateRating",
+          "ratingValue": "4.8",
+          "ratingCount": "1000",
+          "bestRating": "5",
+          "worstRating": "1"
+        }
+      }
+    </script>
+    <!-- FOLLOW VITE BUILD INJECT -->
+    <!-- Check Browser Script Inject -->
+
+    <script>
+      function setTheme() {
+        let e = "follow:color-mode",
+          t = document.documentElement,
+          a = localStorage.getItem(e)
+        function h() {
+          return window.matchMedia
+            ? window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : window.matchMedia("(prefers-color-scheme: light)").matches
+                ? "light"
+                : void 0
+            : void 0
+        }
+        if (!a) {
+          t.dataset.theme = h() || "light"
+          return
+        }
+        switch ((a = JSON.parse(a))) {
+          case "dark":
+            t.dataset.theme = "dark"
+            break
+          case "light":
+            t.dataset.theme = "light"
+            break
+          case "system":
+            t.dataset.theme = h() || "light"
+        }
+      }
+      setTheme()
+      // Can not get window.electron so check userAgent
+      const isElectron = navigator.userAgent.includes("Electron")
+      document.documentElement.dataset.buildType = isElectron ? "electron" : "web"
+    </script>
+    <script>
+      const isMobile = window.innerWidth < 1024
+      document.documentElement.dataset.viewport = isMobile ? "mobile" : "desktop"
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <div id="app-skeleton" class="drag-region">
+      <!-- Skeleton -->
+      <style>
+        [data-build-type]:not([data-build-type="electron"]) #root {
+          background-color: hsl(var(--background));
+        }
+        html,
+        body {
+          height: 100%;
+          width: 100%;
+          margin: 0;
+          padding: 0;
+        }
+        #app-skeleton {
+          position: fixed;
+          inset: 0;
+          z-index: 1000;
+        }
+        [data-viewport="mobile"] #app-skeleton {
+          display: none;
+        }
+        [data-theme="light"] {
+          --background: 0 0% 100%;
+        }
+
+        [data-theme="dark"] {
+          --background: 0 0% 7.1%;
+        }
+        .skeleton {
+          display: flex;
+          height: 100%;
+          width: 100%;
+        }
+
+        .sidebar {
+          width: 16rem;
+          flex-shrink: 0;
+          height: 100%;
+          background-color: hsl(var(--fo-sidebar));
+        }
+        [data-build-type="electron"] .sidebar {
+          background-color: hsl(var(--fo-sidebar) / 0.3);
+        }
+        [data-build-type="electron"][data-theme="dark"] .sidebar {
+          background-color: hsl(var(--fo-sidebar) / 0.1);
+        }
+        .content {
+          flex-grow: 1;
+          width: 100%;
+          height: 100%;
+          background-color: hsl(var(--background));
+        }
+
+        [data-theme="light"] {
+          --fo-sidebar: 240 1.6% 87.6%;
+        }
+        [data-theme="dark"] {
+          --fo-sidebar: 30 1.7% 23.5%;
+        }
+
+        [data-build-type="web"] {
+          --fo-sidebar: 240 4.8% 95.9%;
+        }
+
+        [data-build-type="web"][data-theme="dark"] {
+          --fo-sidebar: 220 8.1% 14.5%;
+        }
+      </style>
+      <div class="skeleton">
+        <div class="sidebar"></div>
+        <div class="content"></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

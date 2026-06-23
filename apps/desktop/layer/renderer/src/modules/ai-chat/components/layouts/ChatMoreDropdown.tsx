@@ -1,0 +1,90 @@
+import type { ReactNode } from "react"
+import { useCallback, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+
+import { setAIPanelVisibility } from "~/atoms/settings/ai"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "~/components/ui/dropdown-menu/dropdown-menu"
+import { useSettingModal } from "~/modules/settings/modal/use-setting-modal-hack"
+
+import { useChatActions, useCurrentChatId, useMessages } from "../../store/hooks"
+import { generateAndUpdateChatTitle } from "../../utils/titleGeneration"
+
+export const ChatMoreDropdown = ({
+  triggerElement,
+  asChild = true,
+  canClosePanel = true,
+}: {
+  triggerElement: ReactNode
+  asChild?: boolean
+  canClosePanel?: boolean
+}) => {
+  const settingModalPresent = useSettingModal()
+  const chatActions = useChatActions()
+  const currentChatId = useCurrentChatId()
+
+  const messages = useMessages()
+  const [isGenerating, setIsGenerating] = useState(false)
+  const { t } = useTranslation("ai")
+
+  const handleCloseSidebar = useRef(() => {
+    setAIPanelVisibility(false)
+  }).current
+
+  const handleGenerateTitle = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!currentChatId || messages.length === 0 || isGenerating) {
+        return
+      }
+
+      setIsGenerating(true)
+      try {
+        await generateAndUpdateChatTitle(currentChatId, messages.slice(-2), (newTitle) => {
+          chatActions.setCurrentTitle(newTitle)
+        })
+      } catch (error) {
+        console.error("Failed to generate title:", error)
+      } finally {
+        setIsGenerating(false)
+      }
+    },
+    [currentChatId, messages, chatActions, isGenerating],
+  )
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild={asChild}>{triggerElement}</DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem
+          onClick={handleGenerateTitle}
+          disabled={!currentChatId || messages.length === 0 || isGenerating}
+        >
+          <i className="i-focal-magic-2 mr-2 size-4" />
+          <span>{isGenerating ? t("common.generating_title") : t("common.generate_title")}</span>
+        </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => settingModalPresent("ai")}>
+          <i className="i-focal-settings-1 mr-2 size-4" />
+          <span>{t("chat.more_dropdown.ai_settings")}</span>
+        </DropdownMenuItem>
+
+        {canClosePanel && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={handleCloseSidebar}>
+              <i className="i-focal-close mr-2 size-4" />
+              <span>{t("chat.more_dropdown.close_sidebar")}</span>
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}

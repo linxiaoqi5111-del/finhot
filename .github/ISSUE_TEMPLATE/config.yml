@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Discuss an issue
+    url: https://github.com/nextcaicai/Focal/discussions
+    about: For general questions, ideas, or non-bug related discussions, please use GitHub Discussions.

@@ -1,0 +1,943 @@
+# AI RSS Reader - Prompt Spec + JSON Schema + Few-shot Examples
+
+## Goal
+
+对进入本地 RSS Reader 的内容进行 Layer 1 分析：
+
+```text
+Content Type Detection
+↓
+Six-dimension Rubric Scoring
+↓
+Quality Score Explanation
+```
+
+当前阶段只判断内容本身质量，不做个性化推荐。
+
+---
+
+# System Prompt
+
+```text
+You are an expert content analyst for an AI-powered RSS reader.
+
+Your task is to evaluate RSS content for knowledge value.
+
+You must:
+1. Detect content types.
+2. Score the article using six quality dimensions with the full 0-5 rubric.
+3. Explain the reasons clearly.
+4. Output valid JSON only.
+
+Do not judge whether the user personally likes the content.
+Do not produce markdown.
+Do not include extra text outside JSON.
+Do not hallucinate facts not present in the input.
+If the article content is insufficient, lower confidence and explain why.
+Do not output quality_score. The application calculates it from dimension scores.
+
+Critical scoring rules:
+- Score each dimension independently. High signal_density does NOT justify high depth or actionability.
+- Covering many topics (breadth) is NOT the same as high information_gain. Aggregated digests of third-party news rarely exceed information_gain 3.
+- actionability 3+ requires concrete steps, commands, or a reproducible workflow the reader can follow. Knowing a product exists is NOT actionable.
+- actionability 0 means pure news or announcements with no practical steps.
+- depth 1 means headline-level "what happened" only. Structured sections with one-line summaries per item are still depth 1-2, not depth 4.
+- originality 2 means aggregation or curation of third-party sources without original analysis.
+```
+
+---
+
+# Type-Specific Constraints
+
+Apply after detecting `content_types`:
+
+```text
+- News >= 60%: depth <= 2, actionability <= 1, originality <= 2
+- News >= 75% (single news or digest): information_gain <= 3 unless the author provides first-hand reporting
+- Daily digest / roundup / multi-item curation: classify as News-dominant, originality = 2 (aggregation), actionability = 0
+- ProductUpdate or model announcement without step-by-step usage: actionability <= 1, depth <= 2
+- Tutorial or Workflow >= 30%: actionability may reach 4-5 only when concrete steps or commands are present
+- Research: actionability is usually 0-2 unless reproducible methods are included
+```
+
+---
+
+# User Prompt Template
+
+```text
+Analyze the following RSS item.
+
+Title:
+{{title}}
+
+Source:
+{{source}}
+
+URL:
+{{url}}
+
+Published At:
+{{published_at}}
+
+Author:
+{{author}}
+
+Content:
+{{content}}
+
+Write summary, positive_reasons, and negative_reasons in {{output_language}}.
+Keep JSON keys in English. Keep scores object keys (information_gain, depth, evidence, actionability, originality, signal_density) in English.
+
+Return JSON following the required schema.
+```
+
+---
+
+# Content Types
+
+Allowed content types:
+
+```json
+[
+  "Workflow",
+  "CaseStudy",
+  "Tutorial",
+  "OpenSourceRelease",
+  "Opinion",
+  "Research",
+  "ProductUpdate",
+  "News"
+]
+```
+
+Content type scores must add up to approximately `1.0`.
+
+Example:
+
+```json
+{
+  "CaseStudy": 0.6,
+  "Tutorial": 0.3,
+  "Opinion": 0.1
+}
+```
+
+---
+
+# Six Scoring Dimensions
+
+Each dimension is scored from `0` to `5`.
+
+## 1. information_gain
+
+Question:
+
+```text
+Does this content provide new information?
+```
+
+Scale:
+
+```text
+0 = Pure repost
+1 = Repeated reporting
+2 = Minor new details
+3 = Multiple new facts
+4 = First-hand information
+5 = Original discovery
+```
+
+---
+
+## 2. depth
+
+Question:
+
+```text
+How deeply does the content explain the topic?
+```
+
+Scale:
+
+```text
+0 = Clickbait
+1 = News only
+2 = Basic explanation
+3 = Explains why
+4 = Explains how
+5 = Systematic analysis with cases, limitations, or tradeoffs
+```
+
+---
+
+## 3. evidence
+
+Question:
+
+```text
+How well is the content supported by evidence?
+```
+
+Scale:
+
+```text
+0 = Pure opinion
+1 = Personal feeling
+2 = Third-party references
+3 = Data or examples
+4 = Experiment or detailed case evidence
+5 = Experiment + data + verifiable sources
+```
+
+---
+
+## 4. actionability
+
+Question:
+
+```text
+Can the reader apply this content?
+```
+
+Scale:
+
+```text
+0 = Pure news
+1 = Trend discussion
+2 = Directional advice
+3 = Actionable suggestions
+4 = Step-by-step guidance
+5 = Fully reproducible workflow
+```
+
+---
+
+## 5. originality
+
+Question:
+
+```text
+Does the author contribute original thinking or experience?
+```
+
+Scale:
+
+```text
+0 = Repost
+1 = AI summary or generic summary
+2 = Aggregation
+3 = Personal viewpoint
+4 = Personal practice
+5 = Original framework or method
+```
+
+---
+
+## 6. signal_density
+
+Question:
+
+```text
+How much useful information exists relative to filler?
+```
+
+Scale:
+
+```text
+0 = Mostly filler
+1 = Less than 10% useful information
+2 = Around 20% useful information
+3 = Around 40% useful information
+4 = Around 60% useful information
+5 = More than 80% useful information
+```
+
+---
+
+# Generic Quality Score Formula
+
+The model should output dimension scores only.
+
+The application should calculate:
+
+```text
+raw_score =
+information_gain * 0.20
++ depth * 0.25
++ evidence * 0.15
++ actionability * 0.15
++ originality * 0.15
++ signal_density * 0.10
+```
+
+Then convert:
+
+```text
+quality_score = raw_score / 5 * 100
+```
+
+---
+
+# JSON Schema
+
+```json
+{
+  "type": "object",
+  "required": [
+    "content_types",
+    "scores",
+    "positive_reasons",
+    "negative_reasons",
+    "confidence",
+    "summary"
+  ],
+  "properties": {
+    "content_types": {
+      "type": "object",
+      "description": "Content type probability distribution. Values should approximately sum to 1.0.",
+      "additionalProperties": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1
+      }
+    },
+    "scores": {
+      "type": "object",
+      "required": [
+        "information_gain",
+        "depth",
+        "evidence",
+        "actionability",
+        "originality",
+        "signal_density"
+      ],
+      "properties": {
+        "information_gain": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "depth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "evidence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "actionability": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "originality": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "signal_density": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
+      }
+    },
+    "positive_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "maxItems": 5
+    },
+    "negative_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 5
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "summary": {
+      "type": "string",
+      "description": "One-sentence neutral summary of the content."
+    }
+  }
+}
+```
+
+---
+
+# Recommended Output Example
+
+```json
+{
+  "content_types": {
+    "Workflow": 0.5,
+    "CaseStudy": 0.3,
+    "Tutorial": 0.2
+  },
+  "scores": {
+    "information_gain": 4,
+    "depth": 4,
+    "evidence": 3,
+    "actionability": 5,
+    "originality": 4,
+    "signal_density": 4
+  },
+  "positive_reasons": [
+    "Provides an end-to-end workflow rather than isolated tips.",
+    "Includes concrete implementation steps.",
+    "Contains first-hand practice and decision rationale."
+  ],
+  "negative_reasons": [
+    "Limited quantitative evidence."
+  ],
+  "confidence": 0.88,
+  "summary": "The article explains a practical workflow for using AI coding tools in a real development process."
+}
+```
+
+---
+
+# Few-shot Example 1: Tutorial
+
+## Input
+
+```text
+Title:
+How to Build a Claude Code Workflow for Research Automation
+
+Source:
+Personal Blog
+
+Content:
+This guide walks through setting up Claude Code, connecting it with a local project, creating reusable research prompts, saving outputs as markdown, and reviewing results in Obsidian. It includes step-by-step commands, folder structure, and common mistakes.
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "Tutorial": 0.6,
+    "Workflow": 0.3,
+    "CaseStudy": 0.1
+  },
+  "scores": {
+    "information_gain": 4,
+    "depth": 4,
+    "evidence": 3,
+    "actionability": 5,
+    "originality": 3,
+    "signal_density": 4
+  },
+  "positive_reasons": [
+    "Contains step-by-step guidance.",
+    "Provides a complete workflow from setup to output review.",
+    "Includes common mistakes, which improves practical usefulness."
+  ],
+  "negative_reasons": [
+    "Evidence appears mostly practical rather than data-backed."
+  ],
+  "confidence": 0.9,
+  "summary": "The article teaches a practical Claude Code workflow for research automation and Obsidian output."
+}
+```
+
+---
+
+# Few-shot Example 2: Case Study
+
+## Input
+
+```text
+Title:
+We Replaced Our Weekly Research Process with AI Agents
+
+Source:
+Startup Engineering Blog
+
+Content:
+The team describes their old research workflow, why it failed, how they introduced AI agents, what changed after four weeks, and where the system still breaks. The article includes screenshots, workflow diagrams, and lessons learned.
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "CaseStudy": 0.55,
+    "Workflow": 0.3,
+    "Opinion": 0.15
+  },
+  "scores": {
+    "information_gain": 4,
+    "depth": 5,
+    "evidence": 4,
+    "actionability": 4,
+    "originality": 4,
+    "signal_density": 4
+  },
+  "positive_reasons": [
+    "Explains the before-and-after workflow clearly.",
+    "Includes real-world implementation details.",
+    "Discusses limitations and failure cases."
+  ],
+  "negative_reasons": [
+    "The results may not generalize beyond this team."
+  ],
+  "confidence": 0.92,
+  "summary": "The article is a practical case study on replacing a research workflow with AI agents."
+}
+```
+
+---
+
+# Few-shot Example 3: Open Source Release
+
+## Input
+
+```text
+Title:
+AgentKit v1.0 Released
+
+Source:
+GitHub Release Notes
+
+Content:
+AgentKit v1.0 adds memory support, tool calling, streaming responses, and a new plugin system. The release includes migration notes, installation commands, and links to examples.
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "OpenSourceRelease": 0.7,
+    "ProductUpdate": 0.2,
+    "Tutorial": 0.1
+  },
+  "scores": {
+    "information_gain": 4,
+    "depth": 3,
+    "evidence": 3,
+    "actionability": 4,
+    "originality": 3,
+    "signal_density": 5
+  },
+  "positive_reasons": [
+    "Announces concrete new capabilities.",
+    "Includes migration notes and installation commands.",
+    "High signal density due to concise release format."
+  ],
+  "negative_reasons": [
+    "Limited deeper analysis of design tradeoffs."
+  ],
+  "confidence": 0.9,
+  "summary": "The release note introduces AgentKit v1.0 with memory, tool calling, streaming, and plugins."
+}
+```
+
+---
+
+# Few-shot Example 4: Opinion
+
+## Input
+
+```text
+Title:
+Why Most AI Agents Fail in Real Workflows
+
+Source:
+Independent Blog
+
+Content:
+The author argues that most AI agents fail because they ignore context management, tool constraints, and recovery design. The article proposes a framework for evaluating agents but does not include experiments or implementation details.
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "Opinion": 0.6,
+    "Workflow": 0.25,
+    "Research": 0.15
+  },
+  "scores": {
+    "information_gain": 4,
+    "depth": 4,
+    "evidence": 2,
+    "actionability": 3,
+    "originality": 4,
+    "signal_density": 4
+  },
+  "positive_reasons": [
+    "Presents a clear original framework.",
+    "Analyzes multiple failure modes rather than making a shallow claim.",
+    "Relevant to workflow and agent system design."
+  ],
+  "negative_reasons": [
+    "Lacks experimental evidence.",
+    "Does not provide implementation steps."
+  ],
+  "confidence": 0.86,
+  "summary": "The article argues that AI agents fail mainly due to weak context, tool, and recovery design."
+}
+```
+
+---
+
+# Few-shot Example 5: Research
+
+## Input
+
+```text
+Title:
+Benchmarking Long-Horizon Web Agents on Real Tasks
+
+Source:
+arXiv
+
+Content:
+The paper introduces a benchmark for evaluating web agents on long-horizon tasks. It describes dataset construction, baselines, evaluation metrics, and experimental results across several models.
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "Research": 0.75,
+    "CaseStudy": 0.15,
+    "Opinion": 0.1
+  },
+  "scores": {
+    "information_gain": 5,
+    "depth": 5,
+    "evidence": 5,
+    "actionability": 2,
+    "originality": 4,
+    "signal_density": 4
+  },
+  "positive_reasons": [
+    "Introduces a new benchmark.",
+    "Provides methodology, baselines, metrics, and results.",
+    "Strong evidence through experiments."
+  ],
+  "negative_reasons": [
+    "Limited immediate practical workflow guidance."
+  ],
+  "confidence": 0.93,
+  "summary": "The paper proposes and evaluates a benchmark for long-horizon web agents."
+}
+```
+
+---
+
+# Few-shot Example 6: Product Update
+
+## Input
+
+```text
+Title:
+Cursor Adds Background Agents
+
+Source:
+Product Blog
+
+Content:
+Cursor announced background agents that can work on tasks asynchronously. The post explains the main feature, availability, pricing plan, and a few example use cases.
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "ProductUpdate": 0.65,
+    "News": 0.2,
+    "Workflow": 0.15
+  },
+  "scores": {
+    "information_gain": 4,
+    "depth": 2,
+    "evidence": 2,
+    "actionability": 3,
+    "originality": 2,
+    "signal_density": 4
+  },
+  "positive_reasons": [
+    "Announces a concrete product capability.",
+    "Provides example use cases.",
+    "Concise and easy to scan."
+  ],
+  "negative_reasons": [
+    "Limited implementation detail.",
+    "Mostly product announcement rather than independent analysis."
+  ],
+  "confidence": 0.88,
+  "summary": "The post announces Cursor background agents and describes availability and example use cases."
+}
+```
+
+---
+
+# Few-shot Example 7: News
+
+## Input
+
+```text
+Title:
+AI Startup Raises $100M Series B
+
+Source:
+Tech News Site
+
+Content:
+The startup announced a $100M Series B led by several investors. The article includes a short company description, investor quotes, and general market context.
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "News": 0.75,
+    "ProductUpdate": 0.15,
+    "Opinion": 0.1
+  },
+  "scores": {
+    "information_gain": 2,
+    "depth": 1,
+    "evidence": 2,
+    "actionability": 0,
+    "originality": 1,
+    "signal_density": 2
+  },
+  "positive_reasons": [
+    "Provides a funding update.",
+    "Includes basic market context."
+  ],
+  "negative_reasons": [
+    "Low practical value.",
+    "Mostly repeats announcement information.",
+    "Limited analysis or original insight."
+  ],
+  "confidence": 0.9,
+  "summary": "The article reports that an AI startup raised a $100M Series B round."
+}
+```
+
+Expected quality score: `26` (Ignore tier)
+
+---
+
+# Few-shot Example 8: Daily Digest
+
+## Input
+
+```text
+Title:
+2026-06-03 | Daily AI Digest
+
+Source:
+Personal Blog
+
+Content:
+Multi-section digest listing Hacker News posts, Y Combinator startups, and tech headlines. Each item is 1-2 sentences summarizing third-party news. Sections include "Today's Highlights", "Y Combinator", "Hacker News", "Tech News", and "Product Hunt".
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "News": 0.85,
+    "ProductUpdate": 0.15
+  },
+  "scores": {
+    "information_gain": 3,
+    "depth": 1,
+    "evidence": 2,
+    "actionability": 0,
+    "originality": 2,
+    "signal_density": 5
+  },
+  "positive_reasons": [
+    "High signal density with minimal filler.",
+    "Covers many relevant updates in one scan."
+  ],
+  "negative_reasons": [
+    "Each item lacks depth and original analysis.",
+    "Mostly repackages third-party sources.",
+    "No actionable steps or reproducible workflow."
+  ],
+  "confidence": 0.88,
+  "summary": "A daily AI news digest aggregating third-party tech headlines."
+}
+```
+
+Expected quality score: `39` (Ignore tier unless source is important)
+
+---
+
+# Few-shot Example 9: Model or Product Announcement
+
+## Input
+
+```text
+Title:
+Introducing MAI-Thinking-1
+
+Source:
+Product Blog
+
+Content:
+The post introduces a new AI model's capabilities, benchmark numbers, pricing, and availability. It explains what the model is optimized for, but does not include usage steps, commands, or a reproducible workflow.
+```
+
+## Output
+
+```json
+{
+  "content_types": {
+    "ProductUpdate": 0.7,
+    "News": 0.2,
+    "Research": 0.1
+  },
+  "scores": {
+    "information_gain": 4,
+    "depth": 2,
+    "evidence": 4,
+    "actionability": 0,
+    "originality": 2,
+    "signal_density": 5
+  },
+  "positive_reasons": [
+    "Includes benchmark data and concrete specs.",
+    "High signal density."
+  ],
+  "negative_reasons": [
+    "No implementation steps or reproducible workflow.",
+    "Mostly product announcement rather than independent analysis."
+  ],
+  "confidence": 0.88,
+  "summary": "The post announces a new AI model with benchmark results and availability details."
+}
+```
+
+Expected quality score: `54` (Low priority tier)
+
+---
+
+# Implementation Notes
+
+## 1. Use structured output if available
+
+Prefer API-level JSON schema / structured output.
+
+Avoid relying only on prompt instructions.
+
+---
+
+## 2. Do not ask the model to calculate final score
+
+The app should calculate `quality_score`.
+
+Recommended TypeScript function:
+
+```ts
+type Scores = {
+  information_gain: number
+  depth: number
+  evidence: number
+  actionability: number
+  originality: number
+  signal_density: number
+}
+
+export function calculateQualityScore(scores: Scores): number {
+  const raw =
+    scores.information_gain * 0.20 +
+    scores.depth * 0.25 +
+    scores.evidence * 0.15 +
+    scores.actionability * 0.15 +
+    scores.originality * 0.15 +
+    scores.signal_density * 0.10
+
+  return Math.round((raw / 5) * 100)
+}
+```
+
+---
+
+## 3. Store raw scores
+
+Do not only store final quality score.
+
+Store:
+
+```json
+{
+  "content_types": {},
+  "scores": {},
+  "quality_score": 0,
+  "positive_reasons": [],
+  "negative_reasons": [],
+  "confidence": 0
+}
+```
+
+This allows future rescoring without re-running AI.
+
+---
+
+## 4. Handle insufficient content
+
+If RSS content is too short, the model should:
+
+```json
+{
+  "confidence": 0.3,
+  "negative_reasons": [
+    "Input content is too short to evaluate reliably."
+  ]
+}
+```
+
+The app can then optionally fetch full article content later.
+
+---
+
+## 5. Recommended MVP thresholds
+
+```text
+80 - 100 = High priority
+60 - 79  = Worth scanning
+40 - 59  = Low priority
+0 - 39   = Ignore unless source is important
+```
+
+---
+
+# Future Extension
+
+Later layers can add:
+
+```text
+Preference Score
+Source Weight
+Topic Weight
+Freshness Score
+Obsidian Export Feedback
+```
+
+But Layer 1 should remain independent and reusable.

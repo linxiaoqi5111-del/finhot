@@ -1,0 +1,7 @@
+policy:
+  - section:
+      - id: [platform]
+        block-list: ["None", "Other"]
+        label:
+          - name: "platform: desktop"
+            keys: ["Desktop - macOS", "Desktop - Windows", "Desktop - Linux", "Desktop - Web"]

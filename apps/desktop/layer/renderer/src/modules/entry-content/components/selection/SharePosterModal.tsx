@@ -1,0 +1,489 @@
+import { Spring } from "@follow/components/constants/spring.js"
+import { useEntry } from "@follow/store/entry/hooks"
+import { useFeedById } from "@follow/store/feed/hooks"
+import { cn } from "@follow/utils"
+import { m } from "motion/react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { useTranslation } from "react-i18next"
+import { toast } from "sonner"
+
+import { useCurrentModal } from "~/components/ui/modal/stacked/hooks"
+import { copyImageToClipboard } from "~/lib/clipboard"
+import { UrlBuilder } from "~/lib/url-builder"
+
+import { GlassButton } from "./GlassButton"
+
+type SharePosterModalProps = {
+  selectedText: string
+  entryId: string
+}
+
+type Mode = "light" | "dark"
+
+export function SharePosterModal({ selectedText, entryId }: SharePosterModalProps) {
+  const { t } = useTranslation()
+  const { dismiss } = useCurrentModal()
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [isCopying, setIsCopying] = useState(false)
+  const [authorAvatarImg, setAuthorAvatarImg] = useState<HTMLImageElement | null>(null)
+  const [mode, setMode] = useState<Mode>(
+    document.documentElement.classList.contains("dark") ? "dark" : "light",
+  )
+
+  const entry = useEntry(entryId, (state) => ({
+    title: state.title,
+    feedId: state.feedId,
+    author: state.author,
+    authorAvatar: state.authorAvatar,
+    publishedAt: state.publishedAt,
+    url: state.url,
+  }))
+
+  const feed = useFeedById(entry?.feedId)
+
+  // Load author avatar image
+  useEffect(() => {
+    if (entry?.authorAvatar) {
+      loadImage(entry.authorAvatar).then(setAuthorAvatarImg)
+    } else {
+      setAuthorAvatarImg(null)
+    }
+  }, [entry?.authorAvatar])
+
+  const draw = useCallback(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const ctx = canvas.getContext("2d", {
+      alpha: false, // Better performance for opaque backgrounds
+      desynchronized: false, // Better quality
+    })
+    if (!ctx) return
+
+    // High resolution for crisp text - use higher scale for better quality
+    // Scale 3 provides excellent quality for long text
+    const scale = 3
+    const baseWidth = 720
+    const width = baseWidth * scale
+
+    // --- Config ---
+    const baseConfig = {
+      bg: mode === "dark" ? "#0f0f0f" : "#ffffff",
+      bgGradient:
+        mode === "dark" ? ["#1a1a1a", "#0f0f0f", "#0a0a0a"] : ["#fafafa", "#ffffff", "#f5f5f5"],
+      text: mode === "dark" ? "#f5f5f5" : "#1a1a1a",
+      textSecondary: mode === "dark" ? "#a3a3a3" : "#525252",
+      accent: mode === "dark" ? "#737373" : "#737373",
+      quoteColor: mode === "dark" ? "#404040" : "#e5e5e5",
+      fontFamilyTitle: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif",
+      fontFamilyBody: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+      fontFamilyMeta: "-apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif",
+      sizeTitle: 36,
+      sizeBody: 26,
+      sizeMeta: 14,
+      lineHeight: 1.7,
+      titleLineHeight: 1.4,
+      maxBodyLines: 18, // Limit body text to 18 lines
+    }
+
+    const config = {
+      ...baseConfig,
+      fontTitle: `600 ${baseConfig.sizeTitle}px ${baseConfig.fontFamilyTitle}`,
+      fontBody: `400 ${baseConfig.sizeBody}px ${baseConfig.fontFamilyBody}`,
+      fontMeta: `500 ${baseConfig.sizeMeta}px ${baseConfig.fontFamilyMeta}`,
+    }
+
+    // --- Measure Height ---
+    const padding = 56
+    const contentWidth = width / scale - padding * 2
+
+    // Measure Body - with truncation
+    ctx.font = config.fontBody
+    const allBodyLines = wrapText(ctx, selectedText, contentWidth)
+    const bodyLines = allBodyLines.slice(0, config.maxBodyLines)
+    const bodyHeight = bodyLines.length * (baseConfig.sizeBody * config.lineHeight)
+
+    // Measure Title
+    let titleHeight = 0
+    if (entry?.title) {
+      ctx.font = config.fontTitle
+      const titleLines = wrapText(ctx, entry.title, contentWidth)
+      titleHeight = titleLines.length * (baseConfig.sizeTitle * config.titleLineHeight) + 24 // + margin
+    }
+
+    // Total Height Calculation
+    const headerHeight = 72
+    const authorHeight = entry?.author ? 48 : 0 // Increased for avatar
+    const footerHeight = 80 // Increased for logo
+    const spacing = 48
+    const quoteSpacing = 32
+
+    const totalContentHeight =
+      padding +
+      headerHeight +
+      quoteSpacing +
+      bodyHeight +
+      spacing +
+      titleHeight +
+      authorHeight +
+      footerHeight +
+      padding
+    const minHeight = 800
+    const finalHeight = Math.max(minHeight, totalContentHeight) * scale
+
+    // Resize canvas
+    canvas.width = width
+    canvas.height = finalHeight
+
+    // Enable high-quality rendering
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = "high"
+
+    // Scale context for high DPI rendering
+    ctx.scale(scale, scale)
+
+    const w = width / scale
+    const h = finalHeight / scale
+
+    // --- Background with Gradient ---
+    const gradient = ctx.createLinearGradient(0, 0, 0, h)
+    const bgColors = config.bgGradient
+    gradient.addColorStop(0, bgColors[0] ?? config.bg)
+    gradient.addColorStop(0.5, bgColors[1] ?? config.bg)
+    gradient.addColorStop(1, bgColors[2] ?? config.bg)
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, w, h)
+
+    // Subtle texture overlay
+    ctx.save()
+    ctx.globalAlpha = 0.03
+    for (let i = 0; i < w; i += 4) {
+      for (let j = 0; j < h; j += 4) {
+        if ((i + j) % 8 === 0) {
+          ctx.fillStyle = mode === "dark" ? "#ffffff" : "#000000"
+          ctx.fillRect(i, j, 1, 1)
+        }
+      }
+    }
+    ctx.restore()
+
+    // --- Layout Drawing ---
+    let currentY = padding + 24
+
+    // 1. Header (Feed Info)
+    ctx.fillStyle = config.textSecondary
+    ctx.globalAlpha = 0.7
+    ctx.font = config.fontMeta
+    ctx.textAlign = "left"
+    ctx.textBaseline = "top"
+
+    const dateStr = entry?.publishedAt
+      ? new Date(entry.publishedAt).toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : new Date().toLocaleDateString()
+
+    const headerText = `${feed?.title || "FinHot"}  •  ${dateStr}`
+    ctx.fillText(headerText, padding, currentY)
+
+    currentY += headerHeight
+
+    // 2. Quote Body with improved styling
+    ctx.save()
+
+    // Decorative Quote Mark - larger and more refined
+    ctx.fillStyle = config.quoteColor
+    ctx.globalAlpha = 0.4
+    ctx.font = "bold 64px Georgia, serif"
+    ctx.textAlign = "left"
+    ctx.textBaseline = "top"
+    ctx.fillText("\u201C", padding - 36, currentY - 24)
+
+    ctx.restore()
+
+    // Body text with better spacing
+    ctx.fillStyle = config.text
+    ctx.globalAlpha = 1
+    ctx.font = config.fontBody
+    ctx.textAlign = "left"
+    ctx.textBaseline = "top"
+
+    bodyLines.forEach((line, index) => {
+      // Add slight indentation for continuation lines
+      const indent = index === 0 ? 0 : 24
+      ctx.fillText(line, padding + indent, currentY)
+      currentY += baseConfig.sizeBody * config.lineHeight
+    })
+
+    // Show truncation indicator if text was truncated
+    if (allBodyLines.length > config.maxBodyLines) {
+      currentY += 8
+      ctx.fillStyle = config.textSecondary
+      ctx.globalAlpha = 0.6
+      ctx.font = config.fontMeta
+      ctx.fillText("...", padding, currentY)
+      ctx.globalAlpha = 1
+    }
+
+    currentY += spacing
+
+    // 3. Divider line
+    ctx.save()
+    ctx.strokeStyle = config.quoteColor
+    ctx.globalAlpha = 0.2
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(padding, currentY - spacing / 2)
+    ctx.lineTo(w - padding, currentY - spacing / 2)
+    ctx.stroke()
+    ctx.restore()
+
+    // 4. Entry Title & Author
+    if (entry?.title) {
+      currentY += 8
+      ctx.fillStyle = config.text
+      ctx.globalAlpha = 0.9
+      ctx.font = config.fontTitle
+      const titleLines = wrapText(ctx, entry.title, contentWidth)
+      titleLines.forEach((line) => {
+        ctx.fillText(line, padding, currentY)
+        currentY += baseConfig.sizeTitle * config.titleLineHeight
+      })
+    }
+
+    if (entry?.author) {
+      currentY += 16
+
+      // Draw author avatar if available
+      const avatarSize = 32
+      const avatarX = padding
+      const avatarY = currentY
+
+      if (authorAvatarImg) {
+        // Draw circular avatar
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2)
+        ctx.clip()
+        ctx.drawImage(authorAvatarImg, avatarX, avatarY, avatarSize, avatarSize)
+        ctx.restore()
+      }
+
+      // Draw author name
+      ctx.fillStyle = config.textSecondary
+      ctx.globalAlpha = 0.8
+      ctx.font = config.fontMeta
+      const authorTextX = authorAvatarImg ? padding + avatarSize + 12 : padding
+      ctx.fillText(`By ${entry.author}`, authorTextX, avatarY + avatarSize / 2 - 7)
+      ctx.globalAlpha = 1
+    }
+
+    // 5. Footer / Branding
+    const footerY = h - padding - 24
+    ctx.fillStyle = config.textSecondary
+    ctx.globalAlpha = 0.6
+    ctx.font = "bold 24px Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
+    ctx.textAlign = "right"
+    ctx.textBaseline = "middle"
+    ctx.fillText("FinHot", w - padding, footerY)
+    ctx.globalAlpha = 1
+  }, [entry, feed, mode, selectedText, authorAvatarImg])
+
+  useEffect(() => {
+    draw()
+  }, [draw])
+
+  const handleCopy = useCallback(async () => {
+    if (!canvasRef.current || isCopying) return
+
+    setIsCopying(true)
+    try {
+      await copyImageToClipboard(canvasRef.current)
+      toast.success(t("entry_content.selection_toolbar.poster_copied"))
+      dismiss()
+    } catch (error) {
+      console.error("Failed to copy image:", error)
+      toast.error(t("entry_content.selection_toolbar.poster_copy_failed"))
+    } finally {
+      setIsCopying(false)
+    }
+  }, [isCopying, t, dismiss])
+
+  const handleShareToX = useCallback(() => {
+    if (!entry) return
+    const text = selectedText.length > 200 ? `${selectedText.slice(0, 200)}...` : selectedText
+    const shareUrl = UrlBuilder.shareEntry(entryId)
+    const intentUrl = `https://x.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(shareUrl)}`
+    window.open(intentUrl, "_blank")
+  }, [entry, selectedText, entryId])
+
+  return (
+    <div className="container center size-full" onClick={(e) => e.stopPropagation()}>
+      <div className="relative flex flex-col items-center justify-center gap-6">
+        {/* Preview Card */}
+        <m.div
+          layout
+          className="relative overflow-hidden rounded-2xl shadow-2xl ring-1 ring-black/5 dark:ring-white/10"
+          initial={{ opacity: 0, scale: 0.9, y: 20 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.9, y: 20 }}
+          transition={Spring.presets.smooth}
+        >
+          <canvas ref={canvasRef} className="size-auto max-h-[65vh] max-w-[90vw] object-contain" />
+        </m.div>
+
+        {/* Floating Toolbar - Glassmorphic Design */}
+        <m.div
+          className={cn(
+            "relative flex items-center gap-3 rounded-full border p-2 backdrop-blur-2xl",
+            "text-text",
+          )}
+          style={{
+            backgroundImage:
+              "linear-gradient(to bottom right, rgba(var(--color-background) / 0.95), rgba(var(--color-background) / 0.9))",
+            borderWidth: "1px",
+            borderStyle: "solid",
+            borderColor: "hsl(var(--fo-a) / 0.2)",
+            boxShadow:
+              "0 8px 32px hsl(var(--fo-a) / 0.08), 0 4px 16px hsl(var(--fo-a) / 0.06), 0 2px 8px rgba(0, 0, 0, 0.1)",
+          }}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 20 }}
+          transition={{ ...Spring.presets.smooth, delay: 0.1 }}
+        >
+          {/* Inner glow layer */}
+          <div
+            className="pointer-events-none absolute inset-0 rounded-full"
+            style={{
+              background:
+                "linear-gradient(to bottom right, hsl(var(--fo-a) / 0.05), transparent, hsl(var(--fo-a) / 0.05))",
+            }}
+          />
+
+          {/* Content */}
+          <div className="relative z-10 flex items-center gap-3">
+            {/* Mode Toggle - Glassmorphic Button */}
+            <m.button
+              type="button"
+              onClick={() => setMode(mode === "light" ? "dark" : "light")}
+              className={cn(
+                "relative flex size-8 items-center justify-center rounded-full",
+                "text-text-secondary transition-all duration-300",
+                "hover:bg-fill/20 hover:text-text",
+              )}
+              whileTap={{ scale: 0.95 }}
+              title={t("entry_content.selection_toolbar.toggle_appearance")}
+            >
+              <span
+                className={mode === "light" ? "i-focal-sun text-base" : "i-focal-moon text-base"}
+              />
+            </m.button>
+
+            {/* Share to X */}
+            <m.button
+              type="button"
+              onClick={handleShareToX}
+              className={cn(
+                "relative flex size-8 items-center justify-center rounded-full",
+                "text-text-secondary transition-all duration-300",
+                "hover:bg-fill/20 hover:text-text",
+              )}
+              whileTap={{ scale: 0.95 }}
+              title={t("entry_content.selection_toolbar.share_to_x")}
+            >
+              <span className="i-focal-social-x text-base" />
+            </m.button>
+
+            {/* Divider */}
+            <div className="h-4 w-px bg-accent/20" />
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 pl-1">
+              <GlassButton variant="secondary" onClick={() => dismiss()}>
+                {t("words.close", { ns: "common" })}
+              </GlassButton>
+              <GlassButton onClick={handleCopy} isLoading={isCopying}>
+                {isCopying ? (
+                  <span className="i-focal-loading-3 relative z-10 animate-spin" />
+                ) : (
+                  <span className="i-focal-copy relative z-10" />
+                )}
+                <span className="relative z-10">
+                  {isCopying
+                    ? t("entry_content.selection_toolbar.copying")
+                    : t("entry_content.selection_toolbar.copy_image")}
+                </span>
+              </GlassButton>
+            </div>
+          </div>
+        </m.div>
+      </div>
+    </div>
+  )
+}
+
+// Helper function to load image from URL
+function loadImage(url: string): Promise<HTMLImageElement | null> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.crossOrigin = "anonymous"
+    img.onload = () => resolve(img)
+    img.onerror = () => resolve(null)
+    img.src = url
+  })
+}
+
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const lines: string[] = []
+
+  // Check if text contains Chinese/Japanese/Korean characters
+  const hasCJK = /[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/.test(text)
+
+  if (hasCJK) {
+    // For CJK text, split by character and build lines
+    let currentLine = ""
+
+    for (const char of text) {
+      const testLine = currentLine + char
+      const metrics = ctx.measureText(testLine)
+
+      if (metrics.width > maxWidth && currentLine.length > 0) {
+        lines.push(currentLine)
+        currentLine = char
+      } else {
+        currentLine = testLine
+      }
+    }
+
+    if (currentLine) {
+      lines.push(currentLine)
+    }
+  } else {
+    // For non-CJK text, split by words
+    const words = text.split(/\s+/)
+    let currentLine = words[0] || ""
+
+    for (let i = 1; i < words.length; i++) {
+      const word = words[i]
+      if (!word) continue
+      const testLine = currentLine ? `${currentLine} ${word}` : word
+      const metrics = ctx.measureText(testLine)
+
+      if (metrics.width > maxWidth && currentLine.length > 0) {
+        lines.push(currentLine)
+        currentLine = word
+      } else {
+        currentLine = testLine
+      }
+    }
+
+    if (currentLine) {
+      lines.push(currentLine)
+    }
+  }
+
+  return lines.length > 0 ? lines : [text]
+}

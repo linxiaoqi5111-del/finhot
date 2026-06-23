@@ -1,0 +1,580 @@
+import { isMobile } from "@follow/components/hooks/useMobile.js"
+import { FeedViewType, getView } from "@follow/constants"
+import type { BehaviorEventType } from "@follow/shared/behavior-events"
+import { IN_ELECTRON, LOCAL_RSS_MODE } from "@follow/shared/constants"
+import { useBehaviorEventStore } from "@follow/store/behavior-event/store"
+import { useIsEntryStarred } from "@follow/store/collection/hooks"
+import { isOnboardingEntryUrl } from "@follow/store/constants/onboarding"
+import { useEntry } from "@follow/store/entry/hooks"
+import { entrySyncServices } from "@follow/store/entry/store"
+import type { EntryModel } from "@follow/store/entry/types"
+import { useFeedById } from "@follow/store/feed/hooks"
+import { useIsInbox } from "@follow/store/inbox/hooks"
+import { doesTextContainHTML } from "@follow/utils/utils"
+import { useMemo } from "react"
+
+import { useShowAITranslationAuto, useShowAITranslationOnce } from "~/atoms/ai-translation"
+import { MENU_ITEM_SEPARATOR, MenuItemSeparator, MenuItemText } from "~/atoms/context-menu"
+import {
+  getReadabilityStatus,
+  ReadabilityStatus,
+  setReadabilityStatus,
+  useEntryIsInReadability,
+} from "~/atoms/readability"
+import { useIntegrationSettingValue } from "~/atoms/settings/integration"
+import { useShowSourceContent } from "~/atoms/source-content"
+import { COMMAND_ID } from "~/modules/command/commands/id"
+import { getCommand, useRunCommandFn } from "~/modules/command/hooks/use-command"
+import { useCommandShortcuts } from "~/modules/command/hooks/use-command-binding"
+import { isMutationCommandId } from "~/modules/command/mutation-command-ids"
+import type { FollowCommandId, UnknownCommand } from "~/modules/command/types"
+import { useToolbarOrderMap } from "~/modules/customize-toolbar/hooks"
+
+import { fetchEntryReadabilityContentFromSource } from "./readability-content"
+import { useRouteParams } from "./useRouteParams"
+
+export const enableEntryReadability = async ({ id, url }: { id: string; url: string }) => {
+  const status = getReadabilityStatus()[id]
+  const isTurnOn = status !== ReadabilityStatus.INITIAL && !!status
+  if (isTurnOn) return
+  return toggleEntryReadability({ id, url })
+}
+
+export const toggleEntryReadability = async ({ id, url }: { id: string; url: string }) => {
+  const status = getReadabilityStatus()[id]
+  const isTurnOn = status !== ReadabilityStatus.INITIAL && !!status
+
+  if (!isTurnOn && url) {
+    setReadabilityStatus({
+      [id]: ReadabilityStatus.WAITING,
+    })
+    try {
+      const readabilityContent = await entrySyncServices.fetchEntryReadabilityContent(
+        id,
+        async () => {
+          return fetchEntryReadabilityContentFromSource({ id, url })
+        },
+        {
+          force: LOCAL_RSS_MODE,
+        },
+      )
+
+      setReadabilityStatus({
+        [id]: readabilityContent ? ReadabilityStatus.SUCCESS : ReadabilityStatus.FAILURE,
+      })
+    } catch {
+      setReadabilityStatus({
+        [id]: ReadabilityStatus.FAILURE,
+      })
+    }
+  } else {
+    setReadabilityStatus({
+      [id]: ReadabilityStatus.INITIAL,
+    })
+  }
+}
+
+interface EntryActionMenuItemConfig {
+  id: FollowCommandId
+  onClick: () => void
+  hide?: boolean
+  shortcut?: string
+  active?: boolean
+  disabled?: boolean
+  notice?: boolean
+  entryId: string
+  requiresLogin?: boolean
+}
+
+interface EntryBehaviorEvent {
+  entryId: string
+  eventType: BehaviorEventType
+}
+
+export const hasNotInterestedBehaviorEvent = (
+  events: readonly EntryBehaviorEvent[],
+  entryId: string,
+) => events.some((event) => event.entryId === entryId && event.eventType === "not_interested")
+
+export class EntryActionMenuItem extends MenuItemText {
+  protected privateConfig: EntryActionMenuItemConfig
+
+  constructor(config: EntryActionMenuItemConfig) {
+    const cmd = getCommand(config.id) || null
+    const requiresLogin = config.requiresLogin ?? isMutationCommandId(config.id)
+    super({
+      ...config,
+      label: cmd?.label.title || "",
+      click: () => config.onClick?.(),
+      hide: !cmd || config.hide,
+      requiresLogin,
+    })
+
+    this.privateConfig = {
+      ...config,
+      requiresLogin,
+    }
+  }
+
+  public get id() {
+    return this.privateConfig.id
+  }
+
+  public get active() {
+    return this.privateConfig.active
+  }
+
+  public get notice() {
+    return this.privateConfig.notice
+  }
+
+  public get entryId() {
+    return this.privateConfig.entryId
+  }
+
+  public override extend(config: Partial<EntryActionMenuItemConfig>) {
+    return new EntryActionMenuItem({
+      ...this.privateConfig,
+      ...config,
+    })
+  }
+}
+
+export class EntryActionDropdownItem extends MenuItemText {
+  protected privateConfig: EntryActionMenuItemConfig
+  public children: EntryActionMenuItem[]
+
+  constructor(config: EntryActionMenuItemConfig & { children?: EntryActionMenuItem[] }) {
+    const cmd = getCommand(config.id) || null
+    const requiresLogin = config.requiresLogin ?? isMutationCommandId(config.id)
+    super({
+      ...config,
+      label: cmd?.label.title || "",
+      click: () => config.onClick?.(),
+      hide: !cmd || config.hide,
+      requiresLogin,
+    })
+
+    this.privateConfig = {
+      ...config,
+      requiresLogin,
+    }
+    this.children = config.children || []
+  }
+
+  public get id() {
+    return this.privateConfig.id
+  }
+
+  public get active() {
+    return this.privateConfig.active
+  }
+
+  public get notice() {
+    return this.privateConfig.notice
+  }
+
+  public get entryId() {
+    return this.privateConfig.entryId
+  }
+
+  public get hasChildren() {
+    return this.children.length > 0
+  }
+
+  public get enabledChildren() {
+    return this.children.filter((child) => !child.hide)
+  }
+
+  public addChild(child: EntryActionMenuItem) {
+    this.children.push(child)
+  }
+
+  public removeChild(childId: string) {
+    this.children = this.children.filter((child) => child.id !== childId)
+  }
+
+  public override extend(
+    config: Partial<EntryActionMenuItemConfig & { children?: EntryActionMenuItem[] }>,
+  ) {
+    return new EntryActionDropdownItem({
+      ...this.privateConfig,
+      ...config,
+      children: config.children || this.children,
+    })
+  }
+}
+export type EntryActionItem = EntryActionMenuItem | EntryActionDropdownItem | MenuItemSeparator
+
+const entrySelector = (state: EntryModel) => {
+  const content = state.content || ""
+  const hasContent = !!content
+  const doesContentContainsHTMLTags = doesTextContainHTML(content)
+
+  const { summary, translation } = state.settings || {}
+
+  const media = state.media || []
+  const attachments = state.attachments || []
+  const images = media.filter((a) => a.type === "photo")
+  const imagesLength = images.length
+
+  return {
+    feedId: state.feedId,
+    inboxId: state.inboxHandle,
+    url: state.url,
+    publishedAt: state.publishedAt.toISOString(),
+    read: state.read,
+    summary,
+    translation,
+    hasContent,
+    doesContentContainsHTMLTags,
+    imagesLength,
+    hasBitTorrent: attachments.some((a) => a.mime_type === "application/x-bittorrent"),
+  }
+}
+export const HIDE_ACTIONS_IN_ENTRY_CONTEXT_MENU: FollowCommandId[] = [
+  COMMAND_ID.entry.viewSourceContent,
+  COMMAND_ID.entry.copyTitle,
+  COMMAND_ID.entry.copyLink,
+  COMMAND_ID.entry.exportAsPDF,
+  COMMAND_ID.entry.imageGallery,
+  COMMAND_ID.entry.toggleAITranslation,
+  COMMAND_ID.entry.share,
+
+  COMMAND_ID.settings.customizeToolbar,
+  COMMAND_ID.entry.readability,
+  COMMAND_ID.entry.exportAsPDF,
+]
+
+export const HIDE_ACTIONS_IN_ENTRY_TOOLBAR_ACTIONS: FollowCommandId[] = [
+  ...HIDE_ACTIONS_IN_ENTRY_CONTEXT_MENU,
+]
+export const useEntryActions = ({ entryId, view }: { entryId: string; view: FeedViewType }) => {
+  const entry = useEntry(entryId, entrySelector)
+  const { isCollection, entryId: routeEntryId } = useRouteParams()
+  const isInCollection = useIsEntryStarred(entryId)
+  const isEntryInReadability = useEntryIsInReadability(entryId)
+
+  const feed = useFeedById(entry?.feedId, (feed) => {
+    return {
+      type: feed.type,
+      ownerUserId: feed.ownerUserId,
+      id: feed.id,
+      siteUrl: feed.siteUrl,
+    }
+  })
+
+  const isInbox = useIsInbox(entry?.inboxId)
+  const isShowSourceContent = useShowSourceContent()
+
+  const isShowAITranslationAuto = useShowAITranslationAuto(!!entry?.translation)
+  const isShowAITranslationOnce = useShowAITranslationOnce(entryId)
+  const isNotInterested = useBehaviorEventStore((state) =>
+    hasNotInterestedBehaviorEvent(state.events, entryId),
+  )
+
+  const runCmdFn = useRunCommandFn()
+  const hasEntry = !!entry
+
+  const integrationSettings = useIntegrationSettingValue()
+
+  const shortcuts = useCommandShortcuts()
+
+  const isCurrentVisitEntry = routeEntryId === entryId
+  const isOnboardingEntry = isOnboardingEntryUrl(entry?.url)
+
+  const actionConfigs: EntryActionItem[] = useMemo(() => {
+    if (!hasEntry) return []
+
+    const configs: EntryActionItem[] = [
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToEagle,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToEagle, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToReadwise,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToReadwise, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToInstapaper,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToInstapaper, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToObsidian,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToObsidian, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToOutline,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToOutline, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToReadeck,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToReadeck, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToCubox,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToCubox, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToZotero,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToZotero, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.integration.saveToQBittorrent,
+        onClick: runCmdFn(COMMAND_ID.integration.saveToQBittorrent, [{ entryId }]),
+        hide: !IN_ELECTRON || !entry.hasBitTorrent,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.star,
+        onClick: runCmdFn(COMMAND_ID.entry.star, [{ entryId, view }]),
+        active: isInCollection,
+        shortcut: shortcuts[COMMAND_ID.entry.star],
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.copyTitle,
+        onClick: runCmdFn(COMMAND_ID.entry.copyTitle, [{ entryId }]),
+        shortcut: shortcuts[COMMAND_ID.entry.copyTitle],
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.copyLink,
+        onClick: runCmdFn(COMMAND_ID.entry.copyLink, [{ entryId }]),
+        hide: !entry.url,
+        shortcut: shortcuts[COMMAND_ID.entry.copyLink],
+        disabled: isOnboardingEntry,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.exportAsPDF,
+        hide: !isCurrentVisitEntry,
+        onClick: runCmdFn(COMMAND_ID.entry.exportAsPDF, [{ entryId }]),
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.imageGallery,
+        hide: entry.imagesLength <= 5,
+        onClick: runCmdFn(COMMAND_ID.entry.imageGallery, [{ entryId }]),
+        disabled: isOnboardingEntry,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.openInBrowser,
+        hide: !entry.url,
+        onClick: runCmdFn(COMMAND_ID.entry.openInBrowser, [{ entryId }]),
+        shortcut: shortcuts[COMMAND_ID.entry.openInBrowser],
+        disabled: isOnboardingEntry,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.viewSourceContent,
+        onClick: runCmdFn(COMMAND_ID.entry.viewSourceContent, [
+          { entryId, siteUrl: feed?.siteUrl },
+        ]),
+        hide: isMobile() || !entry.url,
+        active: isShowSourceContent,
+        disabled: isOnboardingEntry,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.toggleAITranslation,
+        onClick: runCmdFn(COMMAND_ID.entry.toggleAITranslation, []),
+        hide:
+          (!LOCAL_RSS_MODE && isShowAITranslationAuto) ||
+          ([FeedViewType.SocialMedia, FeedViewType.Videos] as (number | undefined)[]).includes(
+            view,
+          ),
+        active: isShowAITranslationOnce,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.global.quickSearch,
+        onClick: runCmdFn(COMMAND_ID.global.quickSearch, []),
+        shortcut: shortcuts[COMMAND_ID.global.quickSearch],
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.read,
+        onClick: runCmdFn(COMMAND_ID.entry.read, [{ entryId }]),
+        active: !!entry.read,
+        shortcut: shortcuts[COMMAND_ID.entry.read],
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.readAbove,
+        onClick: runCmdFn(COMMAND_ID.entry.readAbove, [{ publishedAt: entry.publishedAt }]),
+        hide: !!isCollection,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.readBelow,
+        onClick: runCmdFn(COMMAND_ID.entry.readBelow, [{ publishedAt: entry.publishedAt }]),
+        hide: !!isCollection,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.share,
+        onClick: runCmdFn(COMMAND_ID.entry.share, [{ entryId }]),
+        hide: !entry.url,
+        shortcut: shortcuts[COMMAND_ID.entry.share],
+        entryId,
+      }),
+      MENU_ITEM_SEPARATOR,
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.delete,
+        onClick: runCmdFn(COMMAND_ID.entry.delete, [{ entryId }]),
+        hide: !isInbox,
+        entryId,
+      }),
+
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.notInterested,
+        onClick: runCmdFn(COMMAND_ID.entry.notInterested, [{ entryId }]),
+        active: isNotInterested,
+        entryId,
+      }),
+      new EntryActionMenuItem({
+        id: COMMAND_ID.entry.readability,
+        onClick: runCmdFn(COMMAND_ID.entry.readability, [{ entryId, entryUrl: entry.url! }]),
+        hide: (view && getView(view)?.wideMode) || !entry.url,
+        active: isEntryInReadability,
+        notice: !entry.doesContentContainsHTMLTags && !isEntryInReadability,
+        disabled: isOnboardingEntry,
+        entryId,
+      }),
+
+      // Custom Integration with sub-menu
+      ...(() => {
+        const customIntegrations = integrationSettings.customIntegration || []
+        const enabledIntegrations = customIntegrations.filter((integration) => integration.enabled)
+
+        if (!integrationSettings.enableCustomIntegration || enabledIntegrations.length === 0) {
+          return []
+        }
+
+        return [
+          new EntryActionDropdownItem({
+            id: COMMAND_ID.integration.custom,
+            onClick: runCmdFn(COMMAND_ID.integration.custom, [{ entryId }]),
+            entryId,
+            children: enabledIntegrations.map((integration) => {
+              const virtualId = `integration:custom:${integration.id}` as UnknownCommand["id"]
+              return new EntryActionMenuItem({
+                id: virtualId,
+                onClick: () => {
+                  runCmdFn(virtualId, [{ entryId }])()
+                },
+                entryId,
+              })
+            }),
+          }),
+        ]
+      })(),
+    ].filter((config) => {
+      if (config === MENU_ITEM_SEPARATOR) {
+        return config
+      }
+
+      return !config.hide
+    })
+
+    return configs
+  }, [
+    hasEntry,
+    runCmdFn,
+    entryId,
+    entry?.hasBitTorrent,
+    entry?.url,
+    entry?.imagesLength,
+    entry?.publishedAt,
+    entry?.read,
+    entry?.doesContentContainsHTMLTags,
+    feed?.siteUrl,
+    isInbox,
+    shortcuts,
+    view,
+    isInCollection,
+    isCurrentVisitEntry,
+    isShowSourceContent,
+    isShowAITranslationAuto,
+    isShowAITranslationOnce,
+    isCollection,
+    isEntryInReadability,
+    isNotInterested,
+    integrationSettings.customIntegration,
+    integrationSettings.enableCustomIntegration,
+    isOnboardingEntry,
+  ])
+
+  return actionConfigs
+}
+
+export const useSortedEntryActions = ({
+  entryId,
+  view,
+}: {
+  entryId: string
+  view: FeedViewType
+}) => {
+  const entryActions = useEntryActions({ entryId, view })
+  const orderMap = useToolbarOrderMap()
+  const mainAction = useMemo(
+    () =>
+      entryActions
+        .filter((item) => {
+          if (item === MENU_ITEM_SEPARATOR || item instanceof MenuItemSeparator) {
+            return false
+          }
+          const order = orderMap.get(item.id)
+
+          if (!order) return false
+          return order.type === "main"
+        })
+        .sort((a, b) => {
+          if (a instanceof MenuItemSeparator || b instanceof MenuItemSeparator) {
+            return 0
+          }
+          const orderA = orderMap.get(a.id)?.order || 0
+          const orderB = orderMap.get(b.id)?.order || 0
+          return orderA - orderB
+        }),
+    [entryActions, orderMap],
+  )
+
+  const moreAction = useMemo(
+    () =>
+      entryActions
+        .filter((item) => {
+          if (item instanceof MenuItemSeparator) {
+            return false
+          }
+          const order = orderMap.get(item.id)
+          if (!order) return false
+          return order.type !== "main"
+        })
+        // .filter((item) => item.id !== COMMAND_ID.settings.customizeToolbar)
+        .sort((a, b) => {
+          if (a instanceof MenuItemSeparator || b instanceof MenuItemSeparator) {
+            return 0
+          }
+          const orderA = orderMap.get(a.id)?.order || Infinity
+          const orderB = orderMap.get(b.id)?.order || Infinity
+          return orderA - orderB
+        }),
+    [entryActions, orderMap],
+  )
+
+  return {
+    mainAction,
+    moreAction,
+  }
+}

@@ -1,0 +1,88 @@
+import { Button } from "@follow/components/ui/button/index.js"
+import {
+  DEFAULT_RECOMMEND_FEEDS_SHORTCUT_ID,
+  DEFAULT_SUMMARIZE_TIMELINE_SHORTCUT_ID,
+} from "@follow/shared/settings/defaults"
+import { stopPropagation } from "@follow/utils/dom"
+import { useSetAtom } from "jotai"
+import { useCallback } from "react"
+import { useTranslation } from "react-i18next"
+
+import { useSendAIShortcut } from "~/modules/ai-chat/hooks/useSendAIShortcut"
+import { aiTimelineEnabledAtom } from "~/modules/entry-column/atoms/ai-timeline"
+import { useSettingModal } from "~/modules/settings/modal/use-setting-modal-hack"
+
+export const EntryPlaceholderLogo = () => {
+  const { t } = useTranslation()
+  const { sendAIShortcut } = useSendAIShortcut()
+  const setAiTimelineEnabled = useSetAtom(aiTimelineEnabledAtom)
+  const settingModalPresent = useSettingModal()
+  const handleSummarizeTimeline = useCallback(() => {
+    void sendAIShortcut({
+      shortcutId: DEFAULT_SUMMARIZE_TIMELINE_SHORTCUT_ID,
+      ensureNewChat: true,
+    })
+  }, [sendAIShortcut])
+  const handleRecommendFeeds = useCallback(() => {
+    void sendAIShortcut({
+      shortcutId: DEFAULT_RECOMMEND_FEEDS_SHORTCUT_ID,
+      ensureNewChat: true,
+    })
+  }, [sendAIShortcut])
+  const handleToggleAiTimeline = useCallback(() => {
+    setAiTimelineEnabled((prev) => !prev)
+  }, [setAiTimelineEnabled])
+
+  const buttons = [
+    {
+      label: t("entry_content.placeholder.summarize_timeline"),
+      onClick: handleSummarizeTimeline,
+      icon: <i className="i-focal-paint-brush-ai text-base" />,
+    },
+    {
+      label: t("entry_content.placeholder.suggest_feeds"),
+      onClick: handleRecommendFeeds,
+      icon: <i className="i-focal-search-ai text-base" />,
+    },
+    {
+      label: t("entry_content.placeholder.sort_timeline"),
+      onClick: handleToggleAiTimeline,
+      icon: <i className="i-focal-refresh-4-ai text-base" />,
+    },
+    {
+      label: t("entry_content.placeholder.personalize_ai"),
+      onClick: () => settingModalPresent("ai"),
+      icon: <i className="i-focal-ai text-base" />,
+    },
+  ]
+
+  return (
+    <div
+      data-hide-in-print
+      onContextMenu={stopPropagation}
+      className={
+        "flex w-full min-w-0 flex-col items-center justify-center gap-2 px-12 pb-6 text-center text-lg font-medium text-text-secondary duration-500"
+      }
+    >
+      <i className="i-focal-focal-ai size-16 text-text-tertiary" />
+      <div>{t("entry_content.placeholder.title")}</div>
+      <div className="mt-4 flex flex-col gap-2">
+        {buttons.map((button) => (
+          <Button
+            key={button.label}
+            type="button"
+            onClick={button.onClick}
+            buttonClassName="justify-start"
+            textClassName="flex items-center gap-2 text-purple-600 dark:text-purple-400"
+            variant="ghost"
+          >
+            {button.icon}
+            <span className="bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent dark:from-purple-400 dark:to-blue-400">
+              {button.label}
+            </span>
+          </Button>
+        ))}
+      </div>
+    </div>
+  )
+}
