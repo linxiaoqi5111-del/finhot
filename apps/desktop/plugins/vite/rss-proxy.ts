@@ -423,7 +423,17 @@ function handleCors(req: any, res: any): boolean {
 // then fetch the user timeline API from within the browser context.
 
 const xueqiuCache = new Map<string, { data: any; expiry: number }>()
-const XUEQIU_CACHE_TTL = 30 * 60_000 // 30 minutes
+// Smart cache TTL: 1 hour during trading, 5 hours outside trading
+function getXueqiuCacheTTL(): number {
+  const now = new Date()
+  const hour = now.getHours()
+  const minute = now.getMinutes()
+  const timeInMinutes = hour * 60 + minute
+  const day = now.getDay()
+  const isWeekday = day >= 1 && day <= 5
+  const isTradingHours = isWeekday && timeInMinutes >= 570 && timeInMinutes <= 900 // 9:30-15:00
+  return isTradingHours ? 60 * 60_000 : 5 * 60 * 60_000 // 1h or 5h
+}
 
 function resolveXueqiuUserId(url: string): string | null {
   // finhot://xueqiu/{userId}
@@ -475,7 +485,7 @@ async function fetchXueqiuTimeline(
     statuses: parsed.statuses ?? [],
     screenName: parsed.screenName ?? userId,
   }
-  xueqiuCache.set(userId, { data, expiry: Date.now() + XUEQIU_CACHE_TTL })
+  xueqiuCache.set(userId, { data, expiry: Date.now() + getXueqiuCacheTTL() })
   return data
 }
 

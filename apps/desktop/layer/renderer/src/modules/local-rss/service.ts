@@ -533,6 +533,48 @@ export async function seedDefaultLocalRssFeedsIfNeeded(): Promise<{
   return { seeded: successCount > 0, successCount, failureCount }
 }
 
+/**
+ * Xueqiu smart scheduling:
+ * - Trading hours (weekday 9:30-15:00): refresh every 60 min
+ * - Non-trading hours: refresh at ~20:00 and ~8:30 only (5h interval)
+ */
+const XUEQIU_LAST_REFRESH_KEY = "local-rss:xueqiu-last-refresh"
+
+function shouldRefreshXueqiuNow(): boolean {
+  const now = new Date()
+  const hour = now.getHours()
+  const minute = now.getMinutes()
+  const timeInMinutes = hour * 60 + minute
+  const day = now.getDay()
+  const isWeekday = day >= 1 && day <= 5
+  const isTradingHours = isWeekday && timeInMinutes >= 570 && timeInMinutes <= 900 // 9:30-15:00
+
+  const lastRefresh = (() => {
+    try {
+      const raw = localStorage.getItem(XUEQIU_LAST_REFRESH_KEY)
+      return raw ? Number.parseInt(raw, 10) : 0
+    } catch {
+      return 0
+    }
+  })()
+
+  const elapsed = Date.now() - lastRefresh
+  const intervalMs = isTradingHours ? 60 * 60_000 : 5 * 60 * 60_000 // 1h or 5h
+  return elapsed >= intervalMs
+}
+
+function markXueqiuRefreshed() {
+  try {
+    localStorage.setItem(XUEQIU_LAST_REFRESH_KEY, String(Date.now()))
+  } catch {
+    // ignore
+  }
+}
+
+function isXueqiuFeed(url: string): boolean {
+  return /xueqiu/i.test(url)
+}
+
 export async function refreshAllLocalRssFeeds(): Promise<{
   successCount: number
   failureCount: number
@@ -544,12 +586,18 @@ export async function refreshAllLocalRssFeeds(): Promise<{
   let successCount = 0
   let failureCount = 0
 
+  const shouldRefreshXueqiu = shouldRefreshXueqiuNow()
+
   for (const subscription of subscriptions) {
     const feed = getFeedByIdOrUrl({ id: subscription.feedId ?? undefined })
     if (!feed?.id || !feed.url) continue
 
+    // Skip Xueqiu feeds if not time yet
+    if (isXueqiuFeed(feed.url) && !shouldRefreshXueqiu) continue
+
     try {
       await refreshLocalRssFeed(feed)
+      if (isXueqiuFeed(feed.url)) markXueqiuRefreshed()
       successCount += 1
     } catch (error) {
       failureCount += 1
