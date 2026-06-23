@@ -2093,7 +2093,7 @@ var allEntries=${allEntriesJson};
 var enrichments=${enrichmentsJson};
 var feedMap={};feeds.forEach(function(f){feedMap[f.id]=f});
 var selectedFeedId=null;
-var activeView="smart-today";
+var activeView="smart-selected";
 var activeCat="all";
 var expandedGroups={};
 var expandedClusters={};
@@ -2165,14 +2165,18 @@ function countForFeed(id){return (entriesByFeed[id]||[]).length}
 function icon(name){var icons={today:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 2v4M16 2v4M3 10h18"/><rect x="3" y="4" width="18" height="18" rx="2"/></svg>',unread:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h6"/></svg>',star:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 2 3.1 6.3 6.9 1-5 4.9 1.2 6.8-6.2-3.3L5.8 21 7 14.2 2 9.3l6.9-1z"/></svg>',radar:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20a8 8 0 1 0-8-8"/><path d="M12 16a4 4 0 1 0-4-4"/><path d="M12 12 4 20"/></svg>'};return icons[name]||""}
 
 var radarTopics=buildRadarTopics();
-if(!allEntries.some(isToday))activeView="smart-unread";
+var hasSelected=allEntries.some(function(e){return selStatus(enrichments[e.id])==="selected"});
+if(hasSelected)activeView="smart-selected";
+else if(allEntries.some(isToday))activeView="smart-today";
+else activeView="smart-unread";
 
 function renderSmartNav(){
   var todayCount=allEntries.filter(isToday).length;
+  var selectedCount=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"}).length;
   var items=[
-    {id:"smart-today",label:"今天",count:todayCount,ico:"today"},
-    {id:"smart-unread",label:"全部未读",count:allEntries.length,ico:"unread"},
-    {id:"smart-favorites",label:"收藏",count:0,ico:"star"},
+    {id:"smart-selected",label:"\u7CBE\u9009",count:selectedCount,ico:"star"},
+    {id:"smart-today",label:"\u4ECA\u5929",count:todayCount,ico:"today"},
+    {id:"smart-unread",label:"\u5168\u90E8",count:allEntries.length,ico:"unread"},
     {id:"smart-radar",label:"\u4ECA\u65E5\u70ED\u70B9 TOP",count:radarTopics.length,ico:"radar"}
   ];
   document.getElementById("smart-nav").innerHTML=items.map(function(it){
@@ -2206,8 +2210,8 @@ function renderTabs(){
 function selectedEntries(){
   var list=[];
   if(selectedFeedId)list=(entriesByFeed[selectedFeedId]||[]).slice();
+  else if(activeView==="smart-selected")list=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"});
   else if(activeView==="smart-today")list=allEntries.filter(isToday);
-  else if(activeView==="smart-favorites")list=[];
   else list=allEntries.slice();
   return list.filter(visibleByCat).sort(function(a,b){return new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()});
 }
@@ -2223,7 +2227,7 @@ function empty(msg,sub){document.getElementById("entry-list").innerHTML='<div cl
 
 function renderTimeline(){
   var entries=selectedEntries();
-  var title=selectedFeedId?(feedMap[selectedFeedId]&&feedMap[selectedFeedId].title||"动态"):(activeView==="smart-today"?"今天":activeView==="smart-favorites"?"收藏":"全部未读");
+  var title=selectedFeedId?(feedMap[selectedFeedId]&&feedMap[selectedFeedId].title||"\u52A8\u6001"):(activeView==="smart-selected"?"\u7CBE\u9009":activeView==="smart-today"?"\u4ECA\u5929":"\u5168\u90E8");
   header(title,entries.length+" 未读"+(selectedFeedId?"":" · "+feeds.length+" 个信源"));
   if(!entries.length){empty("暂无内容",activeView==="smart-today"?"今天当前筛选下没有内容":"");return}
   var cl=buildClusters(entries);
