@@ -66,7 +66,9 @@ function stripHtml(html: string): string {
   return tmp.textContent ?? ""
 }
 
-function groupByCategory(feeds: PublicFeed[]): Map<string, PublicFeed[]> {
+const CAT_ORDER = ["微博", "推特", "雪球", "公众号", "其他"]
+
+function groupByCategory(feeds: PublicFeed[]): [string, PublicFeed[]][] {
   const groups = new Map<string, PublicFeed[]>()
   for (const feed of feeds) {
     const cat = feed.category ?? "其他"
@@ -74,7 +76,11 @@ function groupByCategory(feeds: PublicFeed[]): Map<string, PublicFeed[]> {
     if (existing) existing.push(feed)
     else groups.set(cat, [feed])
   }
-  return groups
+  return [...groups.entries()].sort((a, b) => {
+    const ia = CAT_ORDER.indexOf(a[0])
+    const ib = CAT_ORDER.indexOf(b[0])
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib)
+  })
 }
 
 // ─── Components ───
@@ -176,6 +182,7 @@ export function Component() {
       .catch(() => {})
   }, [selectedFeedId])
 
+  const [collapsedCats, setCollapsedCats] = useState<Record<string, boolean>>({})
   const grouped = useMemo(() => groupByCategory(feeds), [feeds])
 
   const feedById = useMemo(() => {
@@ -248,28 +255,61 @@ export function Component() {
           </button>
 
           {/* Grouped feeds */}
-          {[...grouped].map(([category, categoryFeeds]) => (
-            <div key={category} className="mb-2">
-              <div className="mb-0.5 px-2.5 pt-2 text-[10px] font-semibold uppercase tracking-wider text-neutral-400 dark:text-neutral-500">
-                {category}
-              </div>
-              {categoryFeeds.map((feed) => (
+          {grouped.map(([category, categoryFeeds]) => {
+            const isCollapsed = !!collapsedCats[category]
+            return (
+              <div key={category} className="mb-1">
                 <button
-                  key={feed.id}
                   type="button"
-                  onClick={() => handleFeedClick(feed.id)}
-                  className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
-                    selectedFeedId === feed.id
-                      ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
-                      : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
-                  }`}
+                  onClick={() =>
+                    setCollapsedCats((prev) => ({
+                      ...prev,
+                      [category]: !prev[category],
+                    }))
+                  }
+                  className="flex w-full items-center gap-1.5 px-2.5 py-1.5 text-left"
                 >
-                  <FeedIcon feed={feed} />
-                  <span className="truncate">{feed.title ?? feed.url}</span>
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`shrink-0 text-neutral-400 transition-transform duration-150 dark:text-neutral-500 ${
+                      isCollapsed ? "-rotate-90" : ""
+                    }`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                  <span className="text-[11px] font-semibold text-neutral-500 dark:text-neutral-400">
+                    {category}
+                  </span>
+                  <span className="ml-auto text-[10px] text-neutral-400 dark:text-neutral-500">
+                    {categoryFeeds.length}
+                  </span>
                 </button>
-              ))}
-            </div>
-          ))}
+                {!isCollapsed &&
+                  categoryFeeds.map((feed) => (
+                    <button
+                      key={feed.id}
+                      type="button"
+                      onClick={() => handleFeedClick(feed.id)}
+                      className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm transition-colors ${
+                        selectedFeedId === feed.id
+                          ? "bg-blue-50 font-medium text-blue-700 dark:bg-blue-900/20 dark:text-blue-400"
+                          : "text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-700/50"
+                      }`}
+                    >
+                      <FeedIcon feed={feed} />
+                      <span className="truncate">{feed.title ?? feed.url}</span>
+                    </button>
+                  ))}
+              </div>
+            )
+          })}
         </div>
       </aside>
 
