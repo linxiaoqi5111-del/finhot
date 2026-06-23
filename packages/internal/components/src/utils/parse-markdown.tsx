@@ -1,4 +1,4 @@
-import "@microflash/remark-callout-directives/themes/github/index.css"
+import "@microflash/remark-callout-directives/theme/github"
 import "remark-gh-alerts/styles/github-colors-light.css"
 import "remark-gh-alerts/styles/github-colors-dark-media.css"
 import "remark-gh-alerts/styles/github-base.css"

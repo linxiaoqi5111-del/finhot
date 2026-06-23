@@ -101,6 +101,7 @@ export default ({ mode }) => {
     server: {
       host: true,
       port: 2233,
+      allowedHosts: "all",
       watch: {
         ignored: ["**/dist/**", "**/out/**", "**/public/**", ".git/**", "**/.env", "**/.env.*"],
       },
@@ -134,6 +135,7 @@ export default ({ mode }) => {
         ...viteRenderBaseConfig.resolve?.alias,
         "@follow/logger": resolve(__dirname, "../../packages/internal/logger/web.ts"),
       },
+      dedupe: ["react", "react-dom"],
     },
     plugins: [
       ...((viteRenderBaseConfig.plugins ?? []) as any),
