@@ -312,6 +312,37 @@ function selectionLabel(sel: string | null, score: number | null): string {
   return ""
 }
 
+const SCORE_GATE_THRESHOLD = 70
+
+/** Detect feed platform from URL and category */
+function detectPlatform(
+  feedUrl: string | null | undefined,
+  category: string | null | undefined,
+): string {
+  const u = (feedUrl ?? "").toLowerCase()
+  const c = (category ?? "").toLowerCase()
+  if (/:8090/.test(u) || /wechat|mp\.weixin/.test(u) || c.includes("公众号")) return "wechat"
+  if (/xueqiu/.test(u) || c === "雪球") return "xueqiu"
+  if (/twitter|nitter|xcancel|\/x\.com\//.test(u) || c === "推特") return "twitter"
+  if (/weibo/.test(u) || c === "微博") return "weibo"
+  return "other"
+}
+
+/** Check if entry passes the platform-aware score gate */
+function passesScoreGateServer(
+  entry: CachedEntry,
+  enrichments: Record<string, CachedEnrichment>,
+  manifest: FeedCacheManifest,
+): boolean {
+  const feed = manifest.feeds[entry.feedId]
+  if (!feed) return false
+  const p = detectPlatform(feed.url, feed.category)
+  if (p === "wechat") return true
+  const en = enrichments[entry.id]
+  const qs = en?.qualityScore
+  return qs != null && qs >= SCORE_GATE_THRESHOLD
+}
+
 function scoreValue(en: CachedEnrichment | undefined): number | null {
   const value = Number(en?.qualityScore)
   return Number.isFinite(value) ? Math.round(value) : null
@@ -1909,13 +1940,21 @@ export function rssProxyPlugin(): PluginOption {
           }
 
           if (filter === "selected") {
-            entries = entries.filter((e) => deriveSelected(enrichments[e.id] ?? {}) === "selected")
+            entries = entries.filter((e) => {
+              const feed = manifest.feeds[e.feedId]
+              const p = detectPlatform(feed?.url, feed?.category)
+              if (p === "wechat") return true
+              return deriveSelected(enrichments[e.id] ?? {}) === "selected"
+            })
           } else if (filter === "watch") {
             entries = entries.filter((e) => {
               const sel = deriveSelected(enrichments[e.id] ?? {})
               return sel === "selected" || sel === "watch"
             })
           }
+
+          // Platform-aware score gate: WeChat bypasses, others need score >= threshold
+          entries = entries.filter((e) => passesScoreGateServer(e, enrichments, manifest))
 
           const items = entries.slice(0, limit).map((e) => {
             const en = enrichments[e.id] ?? {}
@@ -2812,6 +2851,8 @@ function renderEntryInsight(e,en,f){
 }
 function platform(feed){var u=(feed&&feed.url||"").toLowerCase();var c=(feed&&feed.category||"").toLowerCase();if(u.indexOf(":8090")>=0||u.indexOf("wechat")>=0||u.indexOf("mp.weixin")>=0||c.indexOf("公众号")>=0)return"wechat";if(u.indexOf("xueqiu")>=0||c.indexOf("雪球")>=0)return"xueqiu";if(u.indexOf("twitter")>=0||u.indexOf("x.com")>=0||u.indexOf("nitter")>=0||u.indexOf("xcancel")>=0||c.indexOf("推特")>=0)return"twitter";if(u.indexOf("weibo")>=0||c.indexOf("微博")>=0)return"weibo";return"other"}
 function platformLabel(p){return p==="xueqiu"?"雪球":p==="twitter"?"推特":p==="weibo"?"微博":p==="wechat"?"公众号":"RSS"}
+var SCORE_GATE=70;
+function passesScoreGate(e){var p=platform(feedMap[e.feedId]);if(p==="wechat")return true;var v=scoreVal(enrichments[e.id]);return v!=null&&v>=SCORE_GATE}
 function visibleByCat(e){if(activeCat==="all")return true;return platform(feedMap[e.feedId])===activeCat}
 function isToday(e){var d=new Date(e.publishedAt);var n=new Date();return d.toDateString()===n.toDateString()}
 function countForFeed(id){return (entriesByFeed[id]||[]).length}
@@ -2824,12 +2865,12 @@ else if(allEntries.some(isToday))activeView="smart-today";
 else activeView="smart-unread";
 
 function renderSmartNav(){
-  var todayCount=allEntries.filter(isToday).length;
-  var selectedCount=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"}).length;
+  var todayCount=allEntries.filter(function(e){return isToday(e)&&passesScoreGate(e)}).length;
+  var selectedCount=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"||platform(feedMap[e.feedId])==="wechat"}).length;
   var items=[
     {id:"smart-selected",label:"\u7CBE\u9009",count:selectedCount,ico:"star"},
     {id:"smart-today",label:"\u4ECA\u5929",count:todayCount,ico:"today"},
-    {id:"smart-unread",label:"\u5168\u90E8",count:allEntries.length,ico:"unread"},
+    {id:"smart-unread",label:"\u5168\u90E8",count:allEntries.filter(passesScoreGate).length,ico:"unread"},
     {id:"smart-radar",label:"\u4ECA\u65E5\u70ED\u70B9 TOP",count:radarTopics.length,ico:"radar"}
   ];
   document.getElementById("smart-nav").innerHTML=items.map(function(it){
@@ -2863,10 +2904,10 @@ function renderTabs(){
 function selectedEntries(){
   var list=[];
   if(selectedFeedId)list=(entriesByFeed[selectedFeedId]||[]).slice();
-  else if(activeCat!=="all")list=allEntries.slice();
-  else if(activeView==="smart-selected")list=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"});
-  else if(activeView==="smart-today")list=allEntries.filter(isToday);
-  else list=allEntries.slice();
+  else if(activeCat!=="all"){list=allEntries.slice();if(activeCat!=="wechat")list=list.filter(passesScoreGate)}
+  else if(activeView==="smart-selected")list=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"||platform(feedMap[e.feedId])==="wechat"});
+  else if(activeView==="smart-today")list=allEntries.filter(function(e){return isToday(e)&&passesScoreGate(e)});
+  else list=allEntries.filter(passesScoreGate);
   return list.filter(visibleByCat).sort(function(a,b){return new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()});
 }
 
@@ -3307,6 +3348,8 @@ function getPlatform(feedUrl,cat){
   if(cat==="雪球")return"xueqiu";if(cat==="推特")return"twitter";if(cat==="微博")return"weibo";if(cat==="公众号")return"wechat";
   return"other";
 }
+var SCORE_GATE_SV=70;
+function passesScoreGateSV(e){var f=feedMap[e.feedId];if(!f)return false;var p=getPlatform(f.url,f.category);if(p==="wechat")return true;var en=enrichments[e.id];var qs=en&&en.qualityScore;return qs!=null&&qs>=SCORE_GATE_SV}
 
 // ── Sidebar feed list (grouped by category) ──
 var collapsedCats={};
@@ -3427,6 +3470,7 @@ function renderTimeline(){
       return getPlatform(f.url,f.category)===activeCat;
     });
   }
+  if(!selectedFeedId){entries=entries.filter(function(e){return passesScoreGateSV(e)})}
   document.getElementById("header-title").textContent=selectedFeedId?(feedMap[selectedFeedId]?feedMap[selectedFeedId].title:"动态"):"全部动态";
   document.getElementById("header-sub").textContent=entries.length+" 条内容"+(selectedFeedId?"":(" · "+feeds.length+" 个信源"));
   if(!entries.length){document.getElementById("entry-list").innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/></svg><div>暂无内容</div></div>';return}
