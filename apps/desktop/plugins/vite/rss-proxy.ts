@@ -2942,8 +2942,8 @@ function renderCard(e,cl){
   var p=platform(f);var isSocial=(p==="xueqiu"||p==="twitter"||p==="weibo");
   var aiSum=plain(en.summary||"").trim();
   var displayTitle=isSocial&&aiSum?aiSum:(titlePlain||genTitle(rawDesc));
-  var desc=isSocial?(titlePlain||rawDesc).slice(0,160):((displayTitle&&rawDesc&&rawDesc.slice(0,20)===displayTitle.slice(0,20))?"":rawDesc.slice(0,160));
-  var reason=isSocial?"":recReason(en)||plain(en.summary||"").slice(0,120);
+  var desc=(displayTitle&&rawDesc&&rawDesc.slice(0,20)===displayTitle.slice(0,20))?"":rawDesc.slice(0,160);
+  var reason=recReason(en)||plain(en.summary||"").slice(0,120);
   var tags=Array.isArray(en.tags)?en.tags.slice(0,4):[];
   var h='<article class="card '+(isOpen?"open":"")+'" data-entry-card="'+esc(e.id)+'"><div class="card-head"><span class="feed-icon">'+(f.image?'<img src="'+esc(f.image)+'" alt="">':esc(initial(f.title||f.url)))+'</span><span class="source">'+esc(f.title||f.url||"")+'</span>';
   var sl=selLabel(en);if(sl)h+='<span class="q-wrap" tabindex="0"><span class="q q-'+scoreTier(score||0)+'">'+esc(sl)+'</span>'+qualityDetailHtml(en)+'</span>';else if(score!=null)h+='<span class="q-wrap" tabindex="0"><span class="q q-'+scoreTier(score)+'">'+score+'</span>'+qualityDetailHtml(en)+'</span>';
@@ -3426,8 +3426,8 @@ function renderCard(e,cl){
   var pSV=getPlatform(feedUrl,feedCat);var isSocialSV=(pSV==="xueqiu"||pSV==="twitter"||pSV==="weibo");
   var aiSumSV=normalizeSummary(en.summary||"").trim();
   var displayTitle=isSocialSV&&aiSumSV?aiSumSV:(titlePlain||genTitle(rawDescFull));
-  var desc=isSocialSV?(titlePlain||rawDescFull).slice(0,160):((displayTitle&&rawDescFull&&rawDescFull.slice(0,20)===displayTitle.slice(0,20))?"":rawDescFull.slice(0,160));
-  var reason=isSocialSV?"":en.recommendationReason||en.recommendation_reason||(en.summary?normalizeSummary(en.summary).slice(0,120):"");
+  var desc=(displayTitle&&rawDescFull&&rawDescFull.slice(0,20)===displayTitle.slice(0,20))?"":rawDescFull.slice(0,160);
+  var reason=en.recommendationReason||en.recommendation_reason||(en.summary?normalizeSummary(en.summary).slice(0,120):"");
 
   var h='<div class="card unread">';
 
