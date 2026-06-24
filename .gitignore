@@ -44,6 +44,7 @@ apps/desktop/resources/cli
 # FinHot local scrape/runtime artifacts
 /app/
 /data/
+/finhot/data/
 
 # IDE logs
 .cursor/debug-*.log
