@@ -1149,7 +1149,7 @@ function xueqiuTimelineToFeed(userId: string, screenName: string, statuses: any[
       id: entryId,
       title: title || null,
       url: link,
-      content: stripHtml(content + retweetBlock),
+      content: stripHtmlNL(content + retweetBlock),
       readabilityContent: null,
       readabilityUpdatedAt: null,
       description: stripHtml(content).slice(0, 300) || null,
@@ -3898,7 +3898,7 @@ function parseEntries(xml: string, isAtom: boolean, feedUrl: string, limit: numb
         id,
         title: title || null,
         url: link ?? null,
-        content: stripHtml(content),
+        content: stripHtmlNL(content),
         readabilityContent: null,
         readabilityUpdatedAt: null,
         description: stripHtml(description).slice(0, 300) || null,
@@ -3948,6 +3948,17 @@ function stripHtml(html: string): string {
     .replaceAll(/<[^>]+>/g, "")
     .replaceAll("&nbsp;", " ")
     .replaceAll(/\s+/g, " ")
+    .trim()
+}
+
+function stripHtmlNL(html: string): string {
+  return html
+    .replaceAll(/<br\s*\/?>/gi, "\n")
+    .replaceAll(/<\/(p|div|li|h[1-6]|blockquote|tr)>/gi, "\n")
+    .replaceAll(/<[^>]+>/g, "")
+    .replaceAll("&nbsp;", " ")
+    .replaceAll(/[ \t\r]+/g, " ")
+    .replaceAll(/\n{3,}/g, "\n\n")
     .trim()
 }
 
