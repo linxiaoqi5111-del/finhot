@@ -147,7 +147,9 @@ function loadAllCachedEntries(): CachedEntry[] {
     try {
       const feedEntries: CachedEntry[] = JSON.parse(readFileSync(entriesFile, "utf-8"))
       allEntries.push(...feedEntries)
-    } catch { /* skip */ }
+    } catch {
+      /* skip */
+    }
   }
   allEntries.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
   return allEntries
@@ -162,7 +164,12 @@ function buildRssXml(
   enrichments: EnrichmentMap,
   feedMap: Record<string, CachedFeed>,
 ): string {
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;")
+  const esc = (s: string) =>
+    s
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
 
   let items = ""
   for (const e of entries.slice(0, 100)) {
@@ -1659,9 +1666,9 @@ export function rssProxyPlugin(): PluginOption {
             let dot = 0,
               na = 0,
               nb = 0
-            for (let i = 0; i < a.length; i++) {
-              dot += a[i]! * b[i]!
-              na += a[i]! * a[i]!
+            for (const [i, element] of a.entries()) {
+              dot += element! * b[i]!
+              na += element! * element!
               nb += b[i]! * b[i]!
             }
             return na && nb ? dot / Math.sqrt(na * nb) : 0
@@ -1699,7 +1706,9 @@ export function rssProxyPlugin(): PluginOption {
             const leader = entryMap[c.leaderId]
             const en = enrichments[c.leaderId] ?? {}
             const sources = new Set(
-              c.members.map((mid) => manifest.feeds[entryMap[mid]?.feedId ?? ""]?.title).filter(Boolean),
+              c.members
+                .map((mid) => manifest.feeds[entryMap[mid]?.feedId ?? ""]?.title)
+                .filter(Boolean),
             )
             return {
               id: c.leaderId,
@@ -1905,6 +1914,134 @@ export function rssProxyPlugin(): PluginOption {
         }
       })
 
+      // ─── /api/public/item/:id — Single item detail JSON ───
+      server.middlewares.use("/api/public/item/", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "GET") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const itemId = decodeURIComponent((req.url ?? "/").replace(/^\//, "").split("?")[0])
+          if (!itemId) {
+            res.writeHead(400, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({ error: "Missing item ID" }))
+            return
+          }
+
+          const allEntries = loadAllCachedEntries()
+          const entry = allEntries.find((e) => e.id === itemId)
+          if (!entry) {
+            res.writeHead(404, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({ error: "Item not found" }))
+            return
+          }
+
+          const enrichments = readEnrichments()
+          const manifest = readManifest()
+          const en = enrichments[entry.id] ?? {}
+          const feed = manifest.feeds[entry.feedId]
+
+          // Find related entries (same cluster)
+          const relatedIds = en.relatedEntryIds ?? []
+          const related = relatedIds
+            .map((rid) => {
+              const re = allEntries.find((x) => x.id === rid)
+              if (!re) return null
+              const ren = enrichments[re.id] ?? {}
+              return {
+                id: re.id,
+                title: re.title,
+                url: re.url,
+                publishedAt: re.publishedAt,
+                feedTitle: manifest.feeds[re.feedId]?.title ?? null,
+                qualityScore: ren.qualityScore ?? null,
+              }
+            })
+            .filter(Boolean)
+
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+            "Cache-Control": "public, max-age=120",
+          })
+          res.end(
+            JSON.stringify({
+              id: entry.id,
+              title: entry.title,
+              url: entry.url,
+              publishedAt: entry.publishedAt,
+              author: entry.author,
+              description: entry.description,
+              content: entry.content,
+              feedId: entry.feedId,
+              feedTitle: feed?.title ?? null,
+              feedCategory: feed?.category ?? null,
+              feedUrl: feed?.url ?? null,
+              summary: en.summary ?? null,
+              recommendationReason: en.recommendationReason ?? null,
+              qualityScore: en.qualityScore ?? null,
+              selected: deriveSelected(en),
+              tags: en.tags ?? [],
+              translation: en.translation ?? null,
+              qualityDetails: en.qualityDetails ?? null,
+              clusterId: en.clusterId ?? null,
+              relatedEntries: related,
+            }),
+          )
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(500, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // ─── /items/:id — Static HTML detail page (permalink for sharing) ───
+      server.middlewares.use("/items/", async (req, res) => {
+        try {
+          const itemId = decodeURIComponent((req.url ?? "/").replace(/^\//, "").split("?")[0])
+          if (!itemId) {
+            res.writeHead(400, { "Content-Type": "text/plain" })
+            res.end("Missing item ID")
+            return
+          }
+
+          const allEntries = loadAllCachedEntries()
+          const entry = allEntries.find((e) => e.id === itemId)
+          if (!entry) {
+            res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" })
+            res.end(
+              `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Not Found</title></head><body style="font-family:system-ui;padding:40px;text-align:center"><h1>404</h1><p>Item not found</p><a href="/public">Back to FinHot</a></body></html>`,
+            )
+            return
+          }
+
+          const enrichments = readEnrichments()
+          const manifest = readManifest()
+          const en = enrichments[entry.id] ?? {}
+          const feed = manifest.feeds[entry.feedId]
+
+          const html = buildItemDetailHtml(
+            entry,
+            en,
+            feed ?? null,
+            allEntries,
+            enrichments,
+            manifest,
+          )
+          res.writeHead(200, {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "public, max-age=120",
+          })
+          res.end(html)
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Unknown error"
+          res.writeHead(500, { "Content-Type": "text/plain" })
+          res.end(message)
+        }
+      })
+
       // ─── /api/public/deploy — Build static HTML and deploy to Cloudflare Pages ───
       server.middlewares.use("/api/public/deploy", async (req, res) => {
         if (handleCors(req, res)) return
@@ -1998,6 +2135,186 @@ export function rssProxyPlugin(): PluginOption {
       })
     },
   }
+}
+
+// ─── Item detail page HTML builder ───
+function buildItemDetailHtml(
+  entry: CachedEntry,
+  en: CachedEnrichment,
+  feed: CachedFeed | null,
+  allEntries: CachedEntry[],
+  enrichments: EnrichmentMap,
+  manifest: FeedCacheManifest,
+): string {
+  const esc = (s: string) =>
+    s
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+
+  const score = en.qualityScore ?? null
+  const sel = deriveSelected(en)
+  const selText =
+    sel === "selected" && score != null
+      ? `精选 ${score}`
+      : sel === "watch" && score != null
+        ? `观察 ${score}`
+        : ""
+  const reason = en.recommendationReason ?? ""
+  const summary = en.summary ?? ""
+  const tags = en.tags ?? []
+  const translation = en.translation ?? null
+  const translatedBody =
+    translation?.readabilityContent || translation?.content || translation?.description || ""
+  const relatedIds = en.relatedEntryIds ?? []
+  const related = relatedIds
+    .map((rid) => {
+      const re = allEntries.find((x) => x.id === rid)
+      if (!re) return null
+      const ren = enrichments[re.id] ?? {}
+      return { entry: re, en: ren, feed: manifest.feeds[re.feedId] ?? null }
+    })
+    .filter(Boolean) as { entry: CachedEntry; en: CachedEnrichment; feed: CachedFeed | null }[]
+
+  const qualityDetails = en.qualityDetails ?? null
+  const scoreKeys = [
+    ["information_gain", "信息增量"],
+    ["depth", "深度"],
+    ["evidence", "证据"],
+    ["actionability", "可操作"],
+    ["originality", "原创"],
+    ["signal_density", "密度"],
+  ]
+
+  const pubDate = entry.publishedAt ? new Date(entry.publishedAt).toLocaleString("zh-CN") : ""
+
+  return `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(entry.title ?? "FinHot Detail")}</title>
+<meta name="description" content="${esc(summary || (entry.description ?? "").slice(0, 160))}">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#fafbfc;color:#1a1a2e;line-height:1.7;padding:0 16px}
+.container{max-width:720px;margin:0 auto;padding:32px 0 64px}
+.back{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:#666;text-decoration:none;margin-bottom:20px;padding:4px 8px;border-radius:6px}
+.back:hover{background:#f0f0f0;color:#333}
+.badge{display:inline-block;font-size:12px;font-weight:700;padding:2px 8px;border-radius:4px;margin-bottom:12px}
+.badge-selected{background:rgba(52,199,89,.15);color:#22863a;border:1px solid rgba(52,199,89,.25)}
+.badge-watch{background:rgba(255,204,0,.12);color:#996800;border:1px solid rgba(255,204,0,.2)}
+h1{font-size:24px;font-weight:700;line-height:1.35;margin-bottom:12px;color:#111}
+.meta{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;color:#666;margin-bottom:20px}
+.meta a{color:#0066cc;text-decoration:none}
+.meta a:hover{text-decoration:underline}
+.section{margin-bottom:24px;padding:16px;border-radius:12px;border:1px solid #e8e8ec}
+.section-title{font-size:13px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.reason{background:linear-gradient(135deg,rgba(88,86,214,.04),rgba(52,199,89,.04));border-color:rgba(88,86,214,.15)}
+.reason .section-title{color:#5856d6}
+.summary-text{font-size:14px;line-height:1.7;color:#333}
+.translation{background:rgba(0,122,255,.03);border-color:rgba(0,122,255,.12)}
+.translation .section-title{color:#007aff}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}
+.tag{font-size:11px;padding:3px 8px;border-radius:4px;background:#f0f0f5;color:#555}
+.scores-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.score-item{text-align:center;padding:8px;border-radius:8px;background:#f8f8fa}
+.score-item .val{font-size:18px;font-weight:700;color:#333}
+.score-item .lbl{font-size:11px;color:#888;margin-top:2px}
+.related{margin-top:32px}
+.related h3{font-size:15px;font-weight:700;margin-bottom:12px;color:#333}
+.related-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;border:1px solid #e8e8ec;margin-bottom:8px;text-decoration:none;color:inherit;transition:background .15s}
+.related-item:hover{background:#f5f5f8}
+.related-title{flex:1;font-size:13px;font-weight:550;color:#222}
+.related-meta{font-size:11px;color:#888;white-space:nowrap}
+.content-body{font-size:14px;line-height:1.8;color:#444}
+.content-body img{max-width:100%;border-radius:8px;margin:12px 0}
+.cta{display:inline-flex;align-items:center;gap:6px;margin-top:16px;padding:8px 16px;border-radius:8px;background:#0066cc;color:#fff;text-decoration:none;font-size:13px;font-weight:600}
+.cta:hover{background:#0052a3}
+.footer{margin-top:48px;padding-top:24px;border-top:1px solid #eee;text-align:center;font-size:12px;color:#aaa}
+@media(prefers-color-scheme:dark){
+  body{background:#0d0d12;color:#e0e0e8}
+  h1{color:#f0f0f5}
+  .meta{color:#999}
+  .section{border-color:#2a2a35;background:#14141c}
+  .reason{background:linear-gradient(135deg,rgba(88,86,214,.08),rgba(52,199,89,.06));border-color:rgba(88,86,214,.2)}
+  .translation{background:rgba(0,122,255,.06);border-color:rgba(0,122,255,.15)}
+  .summary-text{color:#ccc}
+  .tag{background:#1e1e28;color:#aaa}
+  .score-item{background:#1a1a24}
+  .score-item .val{color:#eee}
+  .related-item{border-color:#2a2a35}
+  .related-item:hover{background:#1a1a24}
+  .related-title{color:#ddd}
+  .content-body{color:#bbb}
+  .back:hover{background:#1a1a24;color:#ddd}
+}
+</style>
+</head>
+<body>
+<div class="container">
+<a class="back" href="/public">&larr; Back to FinHot</a>
+${selText ? `<div class="badge badge-${sel}">${esc(selText)}</div>` : ""}
+<h1>${esc(entry.title ?? "(无标题)")}</h1>
+<div class="meta">
+${feed ? `<span>${esc(feed.title ?? "")}</span>` : ""}
+${entry.author ? `<span>${esc(entry.author)}</span>` : ""}
+${pubDate ? `<span>${esc(pubDate)}</span>` : ""}
+${entry.url ? `<a href="${esc(entry.url)}" target="_blank" rel="noopener">原文链接</a>` : ""}
+</div>
+${
+  tags.length > 0
+    ? `<div class="tags">${tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>`
+    : ""
+}
+${
+  reason
+    ? `<div class="section reason"><div class="section-title">精选理由</div><div class="summary-text">${esc(reason)}</div></div>`
+    : ""
+}
+${
+  summary
+    ? `<div class="section"><div class="section-title">AI 摘要</div><div class="summary-text">${esc(summary)}</div></div>`
+    : ""
+}
+${
+  translatedBody
+    ? `<div class="section translation"><div class="section-title">AI 翻译 · 中文</div><div class="summary-text">${esc(translatedBody)}</div></div>`
+    : ""
+}
+${
+  qualityDetails?.scores
+    ? `<div class="section"><div class="section-title">AI 评分明细</div><div class="scores-grid">${scoreKeys
+        .map(([k, label]) => {
+          const v = (qualityDetails.scores as Record<string, number>)?.[k]
+          return v != null
+            ? `<div class="score-item"><div class="val">${v}</div><div class="lbl">${label}</div></div>`
+            : ""
+        })
+        .join("")}</div></div>`
+    : ""
+}
+${
+  entry.content || entry.description
+    ? `<div class="section"><div class="section-title">正文内容</div><div class="content-body">${entry.content || entry.description || ""}</div></div>`
+    : ""
+}
+${entry.url ? `<a class="cta" href="${esc(entry.url)}" target="_blank" rel="noopener">阅读原文 &rarr;</a>` : ""}
+${
+  related.length > 0
+    ? `<div class="related"><h3>同一事件 · ${related.length} 篇相关报道</h3>${related
+        .map(
+          (r) =>
+            `<a class="related-item" href="/items/${encodeURIComponent(r.entry.id)}"><span class="related-title">${esc(r.entry.title ?? "(无标题)")}</span><span class="related-meta">${esc(r.feed?.title ?? "")} · ${r.entry.publishedAt ? new Date(r.entry.publishedAt).toLocaleDateString("zh-CN") : ""}</span></a>`,
+        )
+        .join("")}</div>`
+    : ""
+}
+<div class="footer">FinHot · AI 精选金融资讯</div>
+</div>
+</body>
+</html>`
 }
 
 function buildPublicPageHtmlLocalStyle(
@@ -2337,7 +2654,7 @@ render();
 }
 
 // ─── Self-contained public reader HTML (pixel-perfect match to local React app) ───
-function buildPublicPageHtml(
+function _buildPublicPageHtml(
   feedsJson: string,
   entriesByFeedJson: string,
   allEntriesJson: string,
