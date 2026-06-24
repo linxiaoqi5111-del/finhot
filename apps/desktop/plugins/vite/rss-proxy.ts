@@ -2474,7 +2474,7 @@ function renderEntryInsight(e,en,f){
   }
   return h+'</div>';
 }
-function platform(feed){var u=(feed&&feed.url||"").toLowerCase();var c=(feed&&feed.category||"").toLowerCase();if(u.indexOf("xueqiu")>=0||u.indexOf("localhost:8090")>=0||c.indexOf("雪球")>=0)return"xueqiu";if(u.indexOf("twitter")>=0||u.indexOf("x.com")>=0||u.indexOf("nitter")>=0||u.indexOf("xcancel")>=0||c.indexOf("推特")>=0)return"twitter";if(u.indexOf("weibo")>=0||c.indexOf("微博")>=0)return"weibo";if(u.indexOf("wechat")>=0||u.indexOf("mp.weixin")>=0||c.indexOf("公众号")>=0)return"wechat";return"other"}
+function platform(feed){var u=(feed&&feed.url||"").toLowerCase();var c=(feed&&feed.category||"").toLowerCase();if(u.indexOf(":8090")>=0||u.indexOf("wechat")>=0||u.indexOf("mp.weixin")>=0||c.indexOf("公众号")>=0)return"wechat";if(u.indexOf("xueqiu")>=0||c.indexOf("雪球")>=0)return"xueqiu";if(u.indexOf("twitter")>=0||u.indexOf("x.com")>=0||u.indexOf("nitter")>=0||u.indexOf("xcancel")>=0||c.indexOf("推特")>=0)return"twitter";if(u.indexOf("weibo")>=0||c.indexOf("微博")>=0)return"weibo";return"other"}
 function platformLabel(p){return p==="xueqiu"?"雪球":p==="twitter"?"推特":p==="weibo"?"微博":p==="wechat"?"公众号":"RSS"}
 function visibleByCat(e){if(activeCat==="all")return true;return platform(feedMap[e.feedId])===activeCat}
 function isToday(e){var d=new Date(e.publishedAt);var n=new Date();return d.toDateString()===n.toDateString()}
@@ -2946,10 +2946,10 @@ var activeCat="all";
 function getPlatform(feedUrl,cat){
   if(!feedUrl&&!cat)return"other";
   if(feedUrl){
-    if(/xueqiu/i.test(feedUrl)||/localhost:8090/i.test(feedUrl))return"xueqiu";
+    if(/:8090/i.test(feedUrl)||/wechat|mp\\.weixin/i.test(feedUrl))return"wechat";
+    if(/xueqiu/i.test(feedUrl))return"xueqiu";
     if(/twitter|nitter|xcancel|\\/x\\.com\\//i.test(feedUrl))return"twitter";
     if(/weibo/i.test(feedUrl))return"weibo";
-    if(/wechat|mp\\.weixin/i.test(feedUrl))return"wechat";
   }
   if(cat==="雪球")return"xueqiu";if(cat==="推特")return"twitter";if(cat==="微博")return"weibo";if(cat==="公众号")return"wechat";
   return"other";
