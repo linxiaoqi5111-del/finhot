@@ -38,7 +38,6 @@ const TOPIC_SIMILARITY_THRESHOLD = 0.78
 // - Focal 新订阅只拉前 5 条
 // 避免对海量历史旧条目做昂贵 LLM 调用。旧条目不打分就进不了非 WeChat 的 public score gate。
 const ENRICH_RECENCY_DAYS = 3
-const ENRICH_PER_FEED_LIMIT = 5 // 每 feed 最多处理最近 N 条需要 AI 的，对齐 Focal 新订阅只摘前 5 条 + 时效控制
 
 const DETAIL_ALLOWED_TAGS = new Set([
   "a",
@@ -540,10 +539,9 @@ interface EnrichResult {
  *
  * 候选筛选逻辑（关键优化）：
  * - 时间窗口：默认只处理最近 ENRICH_RECENCY_DAYS=3 天（金融消息时效性）。
- * - 每 feed 最多最近 ENRICH_PER_FEED_LIMIT=5 条需要 AI 的（直接对齐 Focal 新订阅只摘前 5 条）。
  * - 必须缺 summary 或 qualityScore 或完整 6 维度 scores 才进入 LLM。
  * - 配合 collector admitted 准入，进一步控制量。
- * - 老条目不打分就自然被 public score gate 挡住（非 WeChat）。
+ * - 老条目不打分就自然被 public score gate 挡住。
  * - 手动 batch 可传 maxAgeDays 覆盖。
  */
 async function enrichMissingEntries(
@@ -579,23 +577,6 @@ async function enrichMissingEntries(
     // 仅近期 + 缺关键字段：避免历史旧条目反复消耗 LLM。
     return !en?.summary || en?.qualityScore == null || !en?.qualityDetails?.scores
   })
-
-  // 每 feed 只取最近的 5 条需要 AI 的（对齐 Focal 新订阅只摘前 5 条规则）。
-  // 即使老 feed 积累了很多历史，也只处理其最新 5 条候选。
-  // 再叠加时间窗口（金融消息时效性强，3 天足够），双重控制 LLM 量。
-  const PER_FEED_AI_LIMIT = ENRICH_PER_FEED_LIMIT
-  const byFeed: Record<string, typeof candidates> = {}
-  for (const e of candidates) {
-    const fid = e.feedId || "unknown"
-    ;(byFeed[fid] ||= []).push(e)
-  }
-  candidates = []
-  for (const list of Object.values(byFeed)) {
-    list.sort(
-      (a, b) => new Date(b.publishedAt ?? 0).getTime() - new Date(a.publishedAt ?? 0).getTime(),
-    )
-    candidates.push(...list.slice(0, PER_FEED_AI_LIMIT))
-  }
 
   if (opts.platform) {
     candidates = candidates.filter(
@@ -840,6 +821,8 @@ function selectionLabel(sel: string | null, score: number | null): string {
 }
 
 const SCORE_GATE_THRESHOLD = 55
+// 公众号无人工策展门槛，但仍要求近 ENRICH_RECENCY_DAYS 天 + 分数 >= 25（剔除明显噪声）。
+const WECHAT_SCORE_GATE_THRESHOLD = 25
 
 /** Detect feed platform from URL and category */
 function detectPlatform(
@@ -870,8 +853,13 @@ function passesScoreGateServer(
     return false
   }
   const p = detectPlatform(feed.url, feed.category)
-  if (p === "wechat") return true
   const qs = en.qualityScore
+  if (p === "wechat") {
+    // 公众号：近 ENRICH_RECENCY_DAYS 天内且分数 >= 25 才展示（无人工策展门槛）。
+    const published = new Date(entry.publishedAt ?? 0).getTime()
+    if (Date.now() - published > ENRICH_RECENCY_DAYS * 24 * 60 * 60 * 1000) return false
+    return qs != null && qs >= WECHAT_SCORE_GATE_THRESHOLD
+  }
   return qs != null && qs >= SCORE_GATE_THRESHOLD
 }
 
@@ -2535,8 +2523,8 @@ export function rssProxyPlugin(): PluginOption {
       })
 
       // ─── /api/public/batch-enrich — Server-side AI summary/quality scoring (only recent candidates) ───
-      // 默认：最近 3 天 + 每 feed 最多最近 5 条（ENRICH_RECENCY_DAYS + ENRICH_PER_FEED_LIMIT）。
-      // 金融消息时效性强，严格对齐 Focal 新订阅只摘前 5 条。显著降低 LLM 调用。
+      // 默认：最近 ENRICH_RECENCY_DAYS=3 天内全部缺字段条目都打分（不再按 feed 限 5 条）。
+      // 金融消息时效性强，3 天窗口已足够控制 LLM 调用量。
       // 传 maxAgeDays 可覆盖。配合 collector admitted。
       server.middlewares.use("/api/public/batch-enrich", async (req, res) => {
         if (handleCors(req, res)) return
