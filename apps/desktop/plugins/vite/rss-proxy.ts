@@ -2420,24 +2420,18 @@ export function rssProxyPlugin(): PluginOption {
             req.on("end", () => resolve(data))
           })
           const parsed = JSON.parse(body || "{}")
-          const name = String(parsed.name ?? "")
-            .slice(0, 200)
+          const id = String(parsed.id ?? parsed.name ?? "")
+            .slice(0, 500)
             .trim()
-          if (!name) {
+          if (!id) {
             res.writeHead(400, { "Content-Type": "application/json" })
-            res.end(JSON.stringify({ error: "name required" }))
+            res.end(JSON.stringify({ error: "id required" }))
             return
           }
           const suggestion = {
-            name,
-            url: String(parsed.url ?? "")
-              .slice(0, 500)
-              .trim(),
+            id,
             platform: String(parsed.platform ?? "")
               .slice(0, 40)
-              .trim(),
-            note: String(parsed.note ?? "")
-              .slice(0, 1000)
               .trim(),
             at: new Date().toISOString(),
           }
@@ -3830,15 +3824,13 @@ function renderFeedback(){
   var h='<div class="fp-about">'
     +'<div class="fp-about-eyebrow">\u6295\u7A3F\u4FE1\u6E90</div>'
     +'<h1 class="fp-about-title">\u60F3\u770B\u7684\u4FE1\u6E90\uFF0C<span>\u544A\u8BC9\u6211\u4EEC</span></h1>'
-    +'<p class="fp-about-tag">\u628A\u4F60\u60F3\u8BA2\u9605\u7684\u8D22\u7ECF\u4FE1\u6E90\uFF08\u516C\u4F17\u53F7 / \u5FAE\u535A / \u96EA\u7403 / \u63A8\u7279 / RSS\uFF09\u53D1\u7ED9\u6211\u4EEC\uFF0C\u5BA1\u6838\u540E\u52A0\u8FDB\u6765\u3002</p>'
+    +'<p class="fp-about-tag">\u9009\u597D\u5E73\u53F0\uFF0C\u586B\u4E0A\u4F60\u60F3\u8BA2\u9605\u7684\u8D22\u7ECF\u4FE1\u6E90 ID \u6216\u94FE\u63A5\uFF0C\u6211\u4EEC\u5BA1\u6838\u540E\u52A0\u8FDB\u6765\u3002</p>'
     +'<div class="fp-steps">'+stepsHtml+'</div>'
     +'<div class="fp-about-divider">\u6295\u7A3F\u8868\u5355</div>'
     +'<div class="fp-form">'
-    +'<div class="fp-field"><label>\u4FE1\u6E90\u540D\u79F0 <span>*</span></label><input id="fp-fs-name" class="fp-input" maxlength="200" placeholder="\u4F8B\u5982\uFF1A\u67D0\u67D0\u8D22\u7ECF\u3001\u67D0\u5238\u5546\u7814\u7A76\u6240"></div>'
-    +'<div class="fp-field"><label>\u4FE1\u6E90\u94FE\u63A5 / RSS / \u4E3B\u9875</label><input id="fp-fs-url" class="fp-input" maxlength="500" placeholder="\u516C\u4F17\u53F7\u540D / \u96EA\u7403\u4E3B\u9875 / RSS \u5730\u5740\uFF0C\u6709\u5C31\u586B"></div>'
     +'<div class="fp-field"><label>\u5E73\u53F0</label><select id="fp-fs-platform" class="fp-select">'+opts+'</select></div>'
-    +'<div class="fp-field"><label>\u60F3\u8981\u7684\u7406\u7531\uFF08\u53EF\u9009\uFF09</label><textarea id="fp-fs-note" class="fp-textarea" maxlength="1000" placeholder="\u5B83\u4E3A\u4EC0\u4E48\u503C\u5F97\u52A0\u8FDB\u6765\uFF1F"></textarea></div>'
-    +'<button id="fp-fs-btn" class="fp-form-btn">\u63D0\u4EA4\u6295\u7A3F</button>'
+    +'<div class="fp-field"><label>\u4FE1\u6E90 ID / \u94FE\u63A5 <span>*</span></label><input id="fp-fs-id" class="fp-input" maxlength="500" placeholder="\u5FAE\u535A UID / \u96EA\u7403\u7528\u6237 ID / \u516C\u4F17\u53F7\u540D / RSS \u94FE\u63A5"></div>'
+    +'<button id="fp-fs-btn" class="fp-form-btn">\u63D0\u4EA4</button>'
     +'<div id="fp-fs-msg" class="fp-form-msg"></div>'
     +'</div>'
     +'<div class="fp-about-foot">\u611F\u8C22\u4F60\u5E2E FinHot \u53D8\u5F97\u66F4\u5168</div>'
@@ -3848,23 +3840,21 @@ function renderFeedback(){
 }
 
 function submitFeedSuggestion(){
-  var nameEl=document.getElementById("fp-fs-name");
+  var idEl=document.getElementById("fp-fs-id");
   var msg=document.getElementById("fp-fs-msg");
   var btn=document.getElementById("fp-fs-btn");
-  var name=((nameEl&&nameEl.value)||"").trim();
-  if(!name){msg.className="fp-form-msg err";msg.textContent="\u8BF7\u5148\u586B\u5199\u4FE1\u6E90\u540D\u79F0\u3002";if(nameEl)nameEl.focus();return}
+  var id=((idEl&&idEl.value)||"").trim();
+  if(!id){msg.className="fp-form-msg err";msg.textContent="\u8BF7\u5148\u586B\u5199\u4FE1\u6E90 ID \u6216\u94FE\u63A5\u3002";if(idEl)idEl.focus();return}
   var payload={
-    name:name,
-    url:(((document.getElementById("fp-fs-url")||{}).value)||"").trim(),
-    platform:(((document.getElementById("fp-fs-platform")||{}).value)||"").trim(),
-    note:(((document.getElementById("fp-fs-note")||{}).value)||"").trim()
+    id:id,
+    platform:(((document.getElementById("fp-fs-platform")||{}).value)||"").trim()
   };
   btn.disabled=true;msg.className="fp-form-msg";msg.textContent="\u63D0\u4EA4\u4E2D\u2026";
   fetch("/api/public/feed-suggestion",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
     .then(function(r){if(!r.ok)throw new Error("bad status");return r.json()})
-    .then(function(){msg.className="fp-form-msg ok";msg.textContent="\u6536\u5230\uFF0C\u8C22\u8C22\u4F60\u7684\u6295\u7A3F\uFF01\u6211\u4EEC\u4F1A\u5C3D\u5FEB\u5BA1\u6838\u3002";["fp-fs-name","fp-fs-url","fp-fs-note"].forEach(function(id){var e=document.getElementById(id);if(e)e.value=""})})
+    .then(function(){msg.className="fp-form-msg ok";msg.textContent="\u6536\u5230\uFF0C\u8C22\u8C22\u4F60\u7684\u6295\u7A3F\uFF01\u6211\u4EEC\u4F1A\u5C3D\u5FEB\u5BA1\u6838\u3002";if(idEl)idEl.value=""})
     .catch(function(){
-      var text="\u3010FinHot \u4FE1\u6E90\u6295\u7A3F\u3011\\n\u540D\u79F0\uFF1A"+payload.name+"\\n\u94FE\u63A5\uFF1A"+(payload.url||"-")+"\\n\u5E73\u53F0\uFF1A"+(payload.platform||"-")+"\\n\u7406\u7531\uFF1A"+(payload.note||"-");
+      var text="\u3010FinHot \u4FE1\u6E90\u6295\u7A3F\u3011\\n\u5E73\u53F0\uFF1A"+(payload.platform||"-")+"\\nID/\u94FE\u63A5\uFF1A"+payload.id;
       if(navigator.clipboard&&navigator.clipboard.writeText){
         navigator.clipboard.writeText(text).then(function(){msg.className="fp-form-msg ok";msg.textContent="\u5F53\u524D\u672A\u63A5\u5165\u63D0\u4EA4\u901A\u9053\uFF0C\u5DF2\u628A\u5185\u5BB9\u590D\u5236\u5230\u526A\u8D34\u677F\uFF0C\u8BF7\u53D1\u7ED9\u6211\u4EEC\u3002"}).catch(function(){msg.className="fp-form-msg err";msg.textContent="\u63D0\u4EA4\u901A\u9053\u6682\u672A\u63A5\u5165\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002"})}
       else{msg.className="fp-form-msg err";msg.textContent="\u63D0\u4EA4\u901A\u9053\u6682\u672A\u63A5\u5165\uFF0C\u8BF7\u7A0D\u540E\u518D\u8BD5\u3002"}
