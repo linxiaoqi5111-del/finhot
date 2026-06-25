@@ -130,14 +130,86 @@ interface FeedCacheManifest {
 }
 
 let cacheDir = ""
+let projectRoot = ""
 
 function ensureCacheDir(rootDir: string) {
   if (cacheDir) return cacheDir
+  projectRoot = rootDir
   cacheDir = join(rootDir, ".finhot-cache")
   if (!existsSync(cacheDir)) mkdirSync(cacheDir, { recursive: true })
   const entriesDir = join(cacheDir, "entries")
   if (!existsSync(entriesDir)) mkdirSync(entriesDir, { recursive: true })
   return cacheDir
+}
+
+// ─── Weibo auto-import via RSSHub ───
+
+const WEIBO_RSSHUB_FETCH_CONCURRENCY = 5
+const WEIBO_RSSHUB_TIMEOUT_MS = 15_000
+const WEIBO_IMPORT_INTERVAL_MS = 30 * 60 * 1000
+
+interface WatchlistData {
+  weibo?: string[]
+  xueqiu?: string[]
+  wechat?: string[]
+  x?: string[]
+  rss?: { name: string; url: string }[]
+}
+
+function loadWatchlistWeiboUids(): string[] {
+  if (!projectRoot) return []
+  const watchlistPath = join(projectRoot, "finhot", "watchlist.json")
+  if (!existsSync(watchlistPath)) return []
+  try {
+    const data: WatchlistData = JSON.parse(readFileSync(watchlistPath, "utf-8"))
+    return data.weibo ?? []
+  } catch {
+    return []
+  }
+}
+
+async function fetchWeiboViaRSSHub(uid: string): Promise<{
+  feed: ReturnType<typeof parseRssFeed>["feed"]
+  entries: ReturnType<typeof parseRssFeed>["entries"]
+} | null> {
+  const rsshubUrl = `http://localhost:1200/weibo/user/${uid}`
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), WEIBO_RSSHUB_TIMEOUT_MS)
+  try {
+    const res = await fetch(rsshubUrl, {
+      signal: controller.signal,
+      headers: {
+        "User-Agent": "FinHot/0.1.4 (RSS Reader)",
+        Accept: "application/rss+xml, application/atom+xml, application/xml, text/xml, */*",
+      },
+    })
+    clearTimeout(timer)
+    if (!res.ok) return null
+    const xml = await res.text()
+    if (!xml.includes("<rss") && !xml.includes("<feed") && !xml.includes("<?xml")) return null
+    return parseRssFeed(xml, rsshubUrl, RSS_ENTRY_LIMIT)
+  } catch {
+    clearTimeout(timer)
+    return null
+  }
+}
+
+async function autoImportWeiboFeeds(): Promise<number> {
+  const uids = loadWatchlistWeiboUids()
+  if (uids.length === 0) return 0
+
+  let imported = 0
+  for (let i = 0; i < uids.length; i += WEIBO_RSSHUB_FETCH_CONCURRENCY) {
+    const batch = uids.slice(i, i + WEIBO_RSSHUB_FETCH_CONCURRENCY)
+    const results = await Promise.allSettled(batch.map((uid) => fetchWeiboViaRSSHub(uid)))
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) {
+        cacheFeedResult(result.value.feed, result.value.entries, "微博")
+        imported++
+      }
+    }
+  }
+  return imported
 }
 
 function readEnrichments(): EnrichmentMap {
@@ -1237,6 +1309,22 @@ export function rssProxyPlugin(): PluginOption {
       const rootDir = server.config.root ? resolvePath(server.config.root, "../..") : process.cwd()
       ensureCacheDir(rootDir)
 
+      // Auto-import Weibo feeds from watchlist.json via RSSHub on startup
+      autoImportWeiboFeeds()
+        .then((n) => {
+          if (n > 0) console.info(`[FinHot] Auto-imported ${n} Weibo feeds via RSSHub`)
+        })
+        .catch(() => {
+          /* RSSHub unavailable — skip silently */
+        })
+
+      // Periodic Weibo re-import (every 30 min)
+      setInterval(() => {
+        autoImportWeiboFeeds().catch(() => {
+          /* skip */
+        })
+      }, WEIBO_IMPORT_INTERVAL_MS)
+
       // ─── /api/rss/preview — RSS fetch with Jina fallback ───
       server.middlewares.use("/api/rss/preview", async (req, res) => {
         if (handleCors(req, res)) return
@@ -2325,6 +2413,28 @@ export function rssProxyPlugin(): PluginOption {
           const message = error instanceof Error ? error.message : "Unknown error"
           res.writeHead(500, { "Content-Type": "text/plain" })
           res.end(message)
+        }
+      })
+
+      // ─── /api/public/refresh-weibo — Manually trigger Weibo feed refresh ───
+      server.middlewares.use("/api/public/refresh-weibo", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const count = await autoImportWeiboFeeds()
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(JSON.stringify({ ok: true, imported: count }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Weibo refresh failed"
+          res.writeHead(502, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
         }
       })
 
