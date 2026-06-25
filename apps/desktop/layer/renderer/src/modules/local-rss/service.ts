@@ -361,7 +361,7 @@ export async function refreshLocalRssFeed(
       subTitle.startsWith("https://mp.weixin.qq.com")
 
     if (needsSync) {
-      let resolvedTitle: string | null = nextFeed.title
+      let resolvedTitle: string | null = nextFeed.title ?? null
       // If feed XML still has no title, try querying wechat2rss list for the account name
       if (!resolvedTitle && feed.url) {
         resolvedTitle = await fetchAccountNameAfterAdd(feed.url)

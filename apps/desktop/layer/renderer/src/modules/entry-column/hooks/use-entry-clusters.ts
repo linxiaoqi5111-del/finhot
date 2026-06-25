@@ -34,7 +34,7 @@ export function useEntryClusters(sortedEntryIds: string[]): {
     const entries = entryActions.getFlattenMapEntries()
 
     const items: ClusterableItem[] = sortedEntryIds
-      .map((id) => {
+      .map((id): ClusterableItem | null => {
         const emb = embeddingData[id]
         const entry = entries[id]
         if (!emb?.vector?.length || !entry) return null

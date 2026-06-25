@@ -29,16 +29,16 @@ Each one was running in my own projects long enough to prove it actually saves t
 
 ### Skills
 
-| Name | One-liner | Article |
-|---|---|---|
-| 🧹 [**neat-freak**](#-neat-freak) | After a session, run `/neat` to reconcile your project docs, CLAUDE.md, and agent memory with the code | [Article (Chinese)](https://mp.weixin.qq.com/s/tg1wd-iN2gWHWhXdY0faeg) |
-| 🔭 [**hv-analysis**](#-hv-analysis) | Drop a product/company/concept into it and get a 10k–30k word PDF research report | [Article (Chinese)](https://mp.weixin.qq.com/s/Y_uRMYBmdLWUPnz_ac7jWA) |
-| ✍️ [**khazix-writer**](#-khazix-writer) | Makes the agent write long-form Chinese articles in my personal voice | [Article (Chinese)](https://mp.weixin.qq.com/s/AtxGrii_K-nzkwUM9SNhEg) |
+| Name                                    | One-liner                                                                                              | Article                                                                |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- |
+| 🧹 [**neat-freak**](#-neat-freak)       | After a session, run `/neat` to reconcile your project docs, CLAUDE.md, and agent memory with the code | [Article (Chinese)](https://mp.weixin.qq.com/s/tg1wd-iN2gWHWhXdY0faeg) |
+| 🔭 [**hv-analysis**](#-hv-analysis)     | Drop a product/company/concept into it and get a 10k–30k word PDF research report                      | [Article (Chinese)](https://mp.weixin.qq.com/s/Y_uRMYBmdLWUPnz_ac7jWA) |
+| ✍️ [**khazix-writer**](#-khazix-writer) | Makes the agent write long-form Chinese articles in my personal voice                                  | [Article (Chinese)](https://mp.weixin.qq.com/s/AtxGrii_K-nzkwUM9SNhEg) |
 
 ### Prompts
 
-| Name | One-liner | Article |
-|---|---|---|
+| Name                                                                | One-liner                                                                  | Article                                                                |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
 | 🔭 [**hv-analysis (Prompt edition)**](#-hv-analysis-prompt-edition) | Lighter version of the skill above — paste it into any Deep Research model | [Article (Chinese)](https://mp.weixin.qq.com/s/Y_uRMYBmdLWUPnz_ac7jWA) |
 
 ---
@@ -64,7 +64,7 @@ Replace `<skill-name>` with the one you want — e.g. `neat-freak`, `hv-analysis
 
 ### 🧹 neat-freak
 
-> *"If I don't run /neat before closing the window, I get itchy. Like there's something stuck in my throat."*
+> _"If I don't run /neat before closing the window, I get itchy. Like there's something stuck in my throat."_
 
 After every session, run `/neat`. It reconciles whatever you changed in this conversation against three layers of project knowledge: **docs**, **root CLAUDE.md / AGENTS.md**, and the **agent's memory system**. Outputs a change summary at the end.
 
@@ -106,7 +106,7 @@ tidy up docs     # natural language
 
 ### 🔭 hv-analysis (Horizontal-Vertical Analysis)
 
-> *"Vertical axis chases time depth, horizontal axis chases simultaneous breadth. They cross to give you the verdict."*
+> _"Vertical axis chases time depth, horizontal axis chases simultaneous breadth. They cross to give you the verdict."_
 
 Want to actually understand what a product / company / concept / person is about? Hand it over.
 
@@ -138,7 +138,7 @@ The output is a **typeset PDF research report**, 10,000–30,000 words.
 
 ### ✍️ khazix-writer
 
-> *"A knowledgeable normal person earnestly talking about something that moved them."*
+> _"A knowledgeable normal person earnestly talking about something that moved them."_
 
 The writing skill behind my own Chinese long-form articles. Once installed, the agent writes in **my voice, my rhythm, with my list of banned phrases** baked in.
 

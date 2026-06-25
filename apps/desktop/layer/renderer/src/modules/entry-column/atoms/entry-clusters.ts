@@ -21,4 +21,4 @@ const emptyClusterMap: ClusterMap = {
 
 export const clusterMapAtom = atom<ClusterMap>(emptyClusterMap)
 
-export const expandedClusterLeadersAtom = atom<Set<string>>(new Set())
+export const expandedClusterLeadersAtom = atom<Set<string>>(new Set<string>())

@@ -4,27 +4,27 @@
 
 ## 代码层变更 → 文档层变更
 
-| 本次对话发生的事 | 要改的文件(按受众) |
-|---|---|
-| 新增 API / 路由 | 项目根 markdown 路由清单 · `docs/integration-guide.md` API 速查表 · `docs/architecture.md` Routes 小节 |
-| 新增 / 改名 环境变量 | 项目根 markdown 环境变量表 · `docs/operator-runbook.md` 环境变量章节 · `docs/integration-guide.md`(如果下游要配) |
-| 新增数据库表 / 列 | 项目根 markdown 数据库表 · `docs/architecture.md` Data Model |
-| 新增 / 改动 用户流程 | 项目根 markdown 用户流程 · README 相关命令行示例 · `docs/handoff.md` What Exists Today |
-| 新增大特性(能跨多文件) | 以上全部 + `docs/architecture.md` 新增章节 + `docs/handoff.md` 已完成清单 |
-| 新增术语 / 改命名 | `docs/integration-guide.md` 术语表(如果有)+ 全局搜索旧术语替换 |
-| 部署参数 / 基础设施变化 | `docs/operator-runbook.md` · 项目根 markdown 部署章节 |
-| 下游项目接入方式变化 | 下游项目的 `docs/<integration>.md` · 上游项目的 `integration-guide.md` |
+| 本次对话发生的事        | 要改的文件(按受众)                                                                                               |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| 新增 API / 路由         | 项目根 markdown 路由清单 · `docs/integration-guide.md` API 速查表 · `docs/architecture.md` Routes 小节           |
+| 新增 / 改名 环境变量    | 项目根 markdown 环境变量表 · `docs/operator-runbook.md` 环境变量章节 · `docs/integration-guide.md`(如果下游要配) |
+| 新增数据库表 / 列       | 项目根 markdown 数据库表 · `docs/architecture.md` Data Model                                                     |
+| 新增 / 改动 用户流程    | 项目根 markdown 用户流程 · README 相关命令行示例 · `docs/handoff.md` What Exists Today                           |
+| 新增大特性(能跨多文件)  | 以上全部 + `docs/architecture.md` 新增章节 + `docs/handoff.md` 已完成清单                                        |
+| 新增术语 / 改命名       | `docs/integration-guide.md` 术语表(如果有)+ 全局搜索旧术语替换                                                   |
+| 部署参数 / 基础设施变化 | `docs/operator-runbook.md` · 项目根 markdown 部署章节                                                            |
+| 下游项目接入方式变化    | 下游项目的 `docs/<integration>.md` · 上游项目的 `integration-guide.md`                                           |
 
 ## 记忆层变更
 
-| 情况 | 处理方式 |
-|---|---|
-| 过期事实 | 改记忆文件,同时更新索引(如 MEMORY.md)的 description |
-| 相对时间("今天"、"最近") | 全部转成绝对日期(`2026-04-29` 而非"今天") |
-| 重复记录(多条说同一件事) | 合并为一条,改索引 |
-| 已完成的待办 | 删除——知识库不是历史档案 |
-| 推翻的决策 | 删除旧条目,留新决策 |
-| 跨会话只用一次的临时上下文 | 删除 |
+| 情况                       | 处理方式                                            |
+| -------------------------- | --------------------------------------------------- |
+| 过期事实                   | 改记忆文件,同时更新索引(如 MEMORY.md)的 description |
+| 相对时间("今天"、"最近")   | 全部转成绝对日期(`2026-04-29` 而非"今天")           |
+| 重复记录(多条说同一件事)   | 合并为一条,改索引                                   |
+| 已完成的待办               | 删除——知识库不是历史档案                            |
+| 推翻的决策                 | 删除旧条目,留新决策                                 |
+| 跨会话只用一次的临时上下文 | 删除                                                |
 
 ## 跨项目影响检查
 

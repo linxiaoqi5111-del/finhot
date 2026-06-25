@@ -73,11 +73,7 @@ function collectEnrichments(): EnrichmentPayload {
         quality.quality_score >= 70 ? "high" : quality.quality_score >= 40 ? "medium" : "low"
       enrichment.qualityTier = tier
       enrichment.selected =
-        quality.quality_score >= 70
-          ? "selected"
-          : quality.quality_score >= 40
-            ? "watch"
-            : "noise"
+        quality.quality_score >= 70 ? "selected" : quality.quality_score >= 40 ? "watch" : "noise"
       enrichment.qualityDetails = {
         contentTypes: quality.content_types,
         scores: quality.scores,
