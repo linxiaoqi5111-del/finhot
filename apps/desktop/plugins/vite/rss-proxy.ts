@@ -195,20 +195,31 @@ async function fetchWeiboViaRSSHub(uid: string): Promise<{
 }
 
 async function autoImportWeiboFeeds(): Promise<number> {
+  console.info(`[FinHot] autoImportWeiboFeeds: projectRoot=${projectRoot}, cacheDir=${cacheDir}`)
   const uids = loadWatchlistWeiboUids()
+  console.info(`[FinHot] Loaded ${uids.length} Weibo UIDs from watchlist.json`)
   if (uids.length === 0) return 0
 
   let imported = 0
+  let failed = 0
   for (let i = 0; i < uids.length; i += WEIBO_RSSHUB_FETCH_CONCURRENCY) {
     const batch = uids.slice(i, i + WEIBO_RSSHUB_FETCH_CONCURRENCY)
     const results = await Promise.allSettled(batch.map((uid) => fetchWeiboViaRSSHub(uid)))
-    for (const result of results) {
+    for (const [j, result] of results.entries()) {
+      const uid = batch[j]
       if (result.status === "fulfilled" && result.value) {
         cacheFeedResult(result.value.feed, result.value.entries, "微博")
         imported++
+      } else {
+        failed++
+        if (failed <= 3) {
+          const reason = result.status === "rejected" ? String(result.reason) : "null result"
+          console.info(`[FinHot] Weibo fetch failed uid=${uid}: ${reason}`)
+        }
       }
     }
   }
+  console.info(`[FinHot] Weibo import done: imported=${imported}, failed=${failed}`)
   return imported
 }
 
