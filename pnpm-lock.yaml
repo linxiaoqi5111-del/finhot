@@ -199,6 +199,9 @@ importers:
       '@follow/shared':
         specifier: workspace:*
         version: link:../../packages/internal/shared
+      '@follow/store':
+        specifier: workspace:*
+        version: link:../../packages/internal/store
       '@follow/utils':
         specifier: workspace:*
         version: link:../../packages/internal/utils

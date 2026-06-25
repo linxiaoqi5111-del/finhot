@@ -57,6 +57,7 @@
     "@follow/hotword": "workspace:*",
     "@follow/models": "workspace:*",
     "@follow/shared": "workspace:*",
+    "@follow/store": "workspace:*",
     "@follow/utils": "workspace:*",
     "@pengx17/electron-forge-maker-appimage": "1.2.1",
     "@playwright/test": "1.58.2",
