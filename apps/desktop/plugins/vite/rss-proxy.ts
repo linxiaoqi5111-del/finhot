@@ -156,9 +156,21 @@ interface WatchlistData {
   rss?: { name: string; url: string }[]
 }
 
+function findMonorepoRoot(start: string): string {
+  let dir = start
+  for (let i = 0; i < 6; i++) {
+    if (existsSync(join(dir, "finhot", "watchlist.json"))) return dir
+    const parent = resolvePath(dir, "..")
+    if (parent === dir) break
+    dir = parent
+  }
+  return start
+}
+
 function loadWatchlistWeiboUids(): string[] {
   if (!projectRoot) return []
-  const watchlistPath = join(projectRoot, "finhot", "watchlist.json")
+  const root = findMonorepoRoot(projectRoot)
+  const watchlistPath = join(root, "finhot", "watchlist.json")
   if (!existsSync(watchlistPath)) return []
   try {
     const data: WatchlistData = JSON.parse(readFileSync(watchlistPath, "utf-8"))
