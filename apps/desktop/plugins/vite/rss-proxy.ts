@@ -11,6 +11,7 @@
 import { execFile } from "node:child_process"
 import crypto from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import type { IncomingMessage, ServerResponse } from "node:http"
 
 import { join, resolve as resolvePath } from "pathe"
 import type { PluginOption } from "vite"
@@ -142,18 +143,29 @@ function ensureCacheDir(rootDir: string) {
   return cacheDir
 }
 
-// ─── Weibo auto-import via RSSHub ───
+// ─── Watchlist auto-import via RSSHub / direct RSS ───
 
-const WEIBO_RSSHUB_FETCH_CONCURRENCY = 5
-const WEIBO_RSSHUB_TIMEOUT_MS = 15_000
-const WEIBO_IMPORT_INTERVAL_MS = 30 * 60 * 1000
+const RSSHUB_BASE_URL = (process.env.RSSHUB_BASE_URL || "http://localhost:1200").replace(/\/+$/, "")
+const WATCHLIST_FETCH_CONCURRENCY = 5
+const WATCHLIST_FETCH_TIMEOUT_MS = 15_000
+const WATCHLIST_IMPORT_INTERVAL_MS = 30 * 60 * 1000
+
+interface WatchlistRssSource {
+  name: string
+  url: string
+}
 
 interface WatchlistData {
   weibo?: string[]
   xueqiu?: string[]
-  wechat?: string[]
+  wechat?: (string | WatchlistRssSource)[]
   x?: string[]
-  rss?: { name: string; url: string }[]
+  rss?: WatchlistRssSource[]
+}
+
+interface WatchlistImportJob {
+  url: string
+  category: string
 }
 
 function findMonorepoRoot(start: string): string {
@@ -167,28 +179,54 @@ function findMonorepoRoot(start: string): string {
   return start
 }
 
-function loadWatchlistWeiboUids(): string[] {
-  if (!projectRoot) return []
+function loadWatchlist(): WatchlistData {
+  if (!projectRoot) return {}
   const root = findMonorepoRoot(projectRoot)
   const watchlistPath = join(root, "finhot", "watchlist.json")
-  if (!existsSync(watchlistPath)) return []
+  if (!existsSync(watchlistPath)) return {}
   try {
-    const data: WatchlistData = JSON.parse(readFileSync(watchlistPath, "utf-8"))
-    return data.weibo ?? []
+    return JSON.parse(readFileSync(watchlistPath, "utf-8")) as WatchlistData
   } catch {
-    return []
+    return {}
   }
 }
 
-async function fetchWeiboViaRSSHub(uid: string): Promise<{
+// Build the list of feeds to import from the watchlist. RSSHub-backed sources
+// (weibo / xueqiu / x) require RSSHub at RSSHUB_BASE_URL with the relevant
+// cookies configured. Direct sources (rss, and wechat entries given as
+// { name, url }) are fetched as-is. Plain-string wechat names are skipped
+// because resolving them needs a wechat2rss endpoint + token, which is not
+// available to this server-side plugin.
+function buildWatchlistImportJobs(data: WatchlistData): WatchlistImportJob[] {
+  const jobs: WatchlistImportJob[] = []
+  for (const uid of data.weibo ?? []) {
+    jobs.push({ url: `${RSSHUB_BASE_URL}/weibo/user/${uid}`, category: "微博" })
+  }
+  for (const id of data.xueqiu ?? []) {
+    jobs.push({ url: `${RSSHUB_BASE_URL}/xueqiu/user/${id}`, category: "雪球" })
+  }
+  for (const username of data.x ?? []) {
+    jobs.push({ url: `${RSSHUB_BASE_URL}/twitter/user/${username}`, category: "X" })
+  }
+  for (const item of data.wechat ?? []) {
+    if (typeof item === "object" && item.url) {
+      jobs.push({ url: item.url, category: "微信" })
+    }
+  }
+  for (const item of data.rss ?? []) {
+    if (item.url) jobs.push({ url: item.url, category: "资讯" })
+  }
+  return jobs
+}
+
+async function fetchAndParseFeed(url: string): Promise<{
   feed: ReturnType<typeof parseRssFeed>["feed"]
   entries: ReturnType<typeof parseRssFeed>["entries"]
 } | null> {
-  const rsshubUrl = `http://localhost:1200/weibo/user/${uid}`
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), WEIBO_RSSHUB_TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), WATCHLIST_FETCH_TIMEOUT_MS)
   try {
-    const res = await fetch(rsshubUrl, {
+    const res = await fetch(url, {
       signal: controller.signal,
       headers: {
         "User-Agent": "FinHot/0.1.4 (RSS Reader)",
@@ -199,24 +237,30 @@ async function fetchWeiboViaRSSHub(uid: string): Promise<{
     if (!res.ok) return null
     const xml = await res.text()
     if (!xml.includes("<rss") && !xml.includes("<feed") && !xml.includes("<?xml")) return null
-    return parseRssFeed(xml, rsshubUrl, RSS_ENTRY_LIMIT)
+    return parseRssFeed(xml, url, RSS_ENTRY_LIMIT)
   } catch {
     clearTimeout(timer)
     return null
   }
 }
 
-async function autoImportWeiboFeeds(): Promise<number> {
-  const uids = loadWatchlistWeiboUids()
-  if (uids.length === 0) return 0
+async function autoImportWatchlistFeeds(): Promise<number> {
+  const jobs = buildWatchlistImportJobs(loadWatchlist())
+  if (jobs.length === 0) return 0
 
   let imported = 0
-  for (let i = 0; i < uids.length; i += WEIBO_RSSHUB_FETCH_CONCURRENCY) {
-    const batch = uids.slice(i, i + WEIBO_RSSHUB_FETCH_CONCURRENCY)
-    const results = await Promise.allSettled(batch.map((uid) => fetchWeiboViaRSSHub(uid)))
-    for (const result of results) {
-      if (result.status === "fulfilled" && result.value) {
-        cacheFeedResult(result.value.feed, result.value.entries, "微博")
+  for (let i = 0; i < jobs.length; i += WATCHLIST_FETCH_CONCURRENCY) {
+    const batch = jobs.slice(i, i + WATCHLIST_FETCH_CONCURRENCY)
+    const results = await Promise.allSettled(
+      batch.map(async (job) => ({ job, result: await fetchAndParseFeed(job.url) })),
+    )
+    for (const settled of results) {
+      if (settled.status === "fulfilled" && settled.value.result) {
+        cacheFeedResult(
+          settled.value.result.feed,
+          settled.value.result.entries,
+          settled.value.job.category,
+        )
         imported++
       }
     }
@@ -1321,21 +1365,21 @@ export function rssProxyPlugin(): PluginOption {
       const rootDir = server.config.root ? resolvePath(server.config.root, "../..") : process.cwd()
       ensureCacheDir(rootDir)
 
-      // Auto-import Weibo feeds from watchlist.json via RSSHub on startup
-      autoImportWeiboFeeds()
+      // Auto-import watchlist feeds (weibo / xueqiu / x / wechat / rss) on startup
+      autoImportWatchlistFeeds()
         .then((n) => {
-          if (n > 0) console.info(`[FinHot] Auto-imported ${n} Weibo feeds via RSSHub`)
+          if (n > 0) console.info(`[FinHot] Auto-imported ${n} watchlist feeds`)
         })
         .catch(() => {
-          /* RSSHub unavailable — skip silently */
+          /* sources unavailable — skip silently */
         })
 
-      // Periodic Weibo re-import (every 30 min)
+      // Periodic watchlist re-import (every 30 min)
       setInterval(() => {
-        autoImportWeiboFeeds().catch(() => {
+        autoImportWatchlistFeeds().catch(() => {
           /* skip */
         })
-      }, WEIBO_IMPORT_INTERVAL_MS)
+      }, WATCHLIST_IMPORT_INTERVAL_MS)
 
       // ─── /api/rss/preview — RSS fetch with Jina fallback ───
       server.middlewares.use("/api/rss/preview", async (req, res) => {
@@ -2589,8 +2633,9 @@ export function rssProxyPlugin(): PluginOption {
         }
       })
 
-      // ─── /api/public/refresh-weibo — Manually trigger Weibo feed refresh ───
-      server.middlewares.use("/api/public/refresh-weibo", async (req, res) => {
+      // ─── /api/public/refresh — Manually trigger a full watchlist re-import ───
+      // (/api/public/refresh-weibo kept as an alias for backward compatibility)
+      const handleRefreshWatchlist = async (req: IncomingMessage, res: ServerResponse) => {
         if (handleCors(req, res)) return
         if (req.method !== "POST") {
           res.writeHead(405, { "Content-Type": "application/json" })
@@ -2598,18 +2643,20 @@ export function rssProxyPlugin(): PluginOption {
           return
         }
         try {
-          const count = await autoImportWeiboFeeds()
+          const count = await autoImportWatchlistFeeds()
           res.writeHead(200, {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
           })
           res.end(JSON.stringify({ ok: true, imported: count }))
         } catch (error: unknown) {
-          const message = error instanceof Error ? error.message : "Weibo refresh failed"
+          const message = error instanceof Error ? error.message : "Watchlist refresh failed"
           res.writeHead(502, { "Content-Type": "application/json" })
           res.end(JSON.stringify({ error: message }))
         }
-      })
+      }
+      server.middlewares.use("/api/public/refresh", handleRefreshWatchlist)
+      server.middlewares.use("/api/public/refresh-weibo", handleRefreshWatchlist)
 
       // ─── /api/public/deploy — Build static HTML and deploy to Cloudflare Pages ───
       server.middlewares.use("/api/public/deploy", async (req, res) => {
