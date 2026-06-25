@@ -533,12 +533,14 @@ Return JSON following this schema:
  */
 const RICH_SUMMARY_SYSTEM_PROMPT = `你是一名专业的财经/科技内容编辑。请用简体中文写一段中立、信息密度高的摘要，让读者不打开原文也能快速抓住要点。
 要求：
-- 3-5 句，约 120-220 字。
+- 约 120-240 字，分成 2-3 个自然段，每段聚焦一个层面（如：发生了什么 / 关键数据或逻辑 / 对读者的意义）。段与段之间用一个空行分隔。
 - 覆盖核心事实、关键数据或观点、以及对读者的意义；不夸张、不臆测、不照抄标题。
-- 纯文本输出，不要 markdown、不要项目符号、不要任何前后缀（如"摘要："）。`
+- 高亮关键信息：把最核心的一句结论或最关键的术语用 == 包裹（如 ==核心结论==），全文最多高亮 2 处；涉及的关键主体/标的可用【】或《》标注。
+- 数字、涨跌幅、百分比、金额请如实保留原文写法（如 12.3%、涨停、3.5 亿元），无需手动高亮。
+- 输出纯文本（仅允许上面的 == 和【】《》标注），不要 markdown 标题/代码块，不要任何前后缀（如"摘要："）。`
 
 function buildRichSummaryUserPrompt(source: string): string {
-  return `请为下面的内容写一段富摘要（3-5 句，简体中文）。\n\n${source}`
+  return `请为下面的内容写一段分段富摘要（2-3 段，简体中文），并按要求高亮关键信息。\n\n${source}`
 }
 
 /** Step 2a: generate a rich multi-sentence summary. Returns null on any failure. */
@@ -3475,6 +3477,36 @@ function buildItemDetailHtml(
       .replaceAll(">", "&gt;")
       .replaceAll('"', "&quot;")
 
+  // Inline highlight: ==key==→<mark>, 《》/【】→bold, financial figures→<mark class="hl-num">.
+  const highlightInline = (line: string): string =>
+    line
+      .replaceAll(/==([^=]+)==/g, "<mark>$1</mark>")
+      .replaceAll(/《([^》]+)》/g, "<strong>《$1》</strong>")
+      .replaceAll(/【([^】]+)】/g, "<strong>【$1】</strong>")
+      .replaceAll(
+        /(\d+(?:\.\d+)?%|[涨跌]停|[涨跌](?:超|幅)?\s?\d+(?:\.\d+)?%|\d+(?:\.\d+)?(?:万亿|亿|万)元?)/g,
+        '<mark class="hl-num">$1</mark>',
+      )
+  // Render a summary as paragraphs with highlighting; auto-splits flat text.
+  const richSummaryHtml = (raw: string): string => {
+    let body = esc(raw.trim())
+    if (!body) return ""
+    if (!body.includes("\n")) {
+      const sents = body.match(/[^。！？!?\n]+[。！？!?]+/g)
+      if (sents && sents.length >= 3) {
+        const paras: string[] = []
+        for (let i = 0; i < sents.length; i += 2) paras.push(sents.slice(i, i + 2).join(""))
+        body = paras.join("\n")
+      }
+    }
+    return body
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => `<p>${highlightInline(line)}</p>`)
+      .join("")
+  }
+
   const score = en.qualityScore ?? null
   const sel = deriveSelected(en)
   const selText =
@@ -3531,6 +3563,7 @@ h1{font-size:28px;font-weight:800;line-height:1.3;margin-bottom:14px;color:#111;
 .reason{background:linear-gradient(135deg,rgba(88,86,214,.04),rgba(52,199,89,.04));border-color:rgba(88,86,214,.15);border-left:3px solid rgba(88,86,214,.45)}
 .reason .section-title{color:#5856d6}
 .summary-text{font-size:15px;line-height:1.75;color:#333}
+.summary-text.rich p{margin:0 0 10px}.summary-text.rich p:last-child{margin-bottom:0}.summary-text.rich strong{font-weight:700}.summary-text mark{background:rgba(255,184,0,.22);color:inherit;padding:0 3px;border-radius:4px;font-weight:600}.summary-text mark.hl-num{background:rgba(0,122,255,.14);color:#0066cc;font-weight:700}
 .translation{background:rgba(0,122,255,.03);border-color:rgba(0,122,255,.12);border-left:3px solid rgba(0,122,255,.4)}
 .translation .section-title{color:#007aff}
 .tags{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:20px}
@@ -3558,6 +3591,7 @@ h1{font-size:28px;font-weight:800;line-height:1.3;margin-bottom:14px;color:#111;
   .reason{background:linear-gradient(135deg,rgba(88,86,214,.08),rgba(52,199,89,.06));border-color:rgba(88,86,214,.2)}
   .translation{background:rgba(0,122,255,.06);border-color:rgba(0,122,255,.15)}
   .summary-text{color:#ccc}
+  .summary-text mark{background:rgba(255,200,40,.2);color:#ffe9a8}.summary-text mark.hl-num{background:rgba(80,160,255,.22);color:#9cc7ff}
   .tag{background:#1e1e28;color:#aaa}
   .score-item{background:#1a1a24}
   .score-item .val{color:#eee}
@@ -3591,7 +3625,7 @@ ${
 }
 ${
   summary
-    ? `<div class="section"><div class="section-title">AI 摘要</div><div class="summary-text">${esc(summary)}</div></div>`
+    ? `<div class="section"><div class="section-title">AI 摘要</div><div class="summary-text rich">${richSummaryHtml(summary)}</div></div>`
     : ""
 }
 ${
@@ -3681,7 +3715,8 @@ a{color:inherit;text-decoration:none}.app{display:flex;height:100vh;overflow:hid
 .detail-title{font-size:26px;font-weight:780;line-height:1.32;color:rgba(var(--color-text));letter-spacing:-.018em;word-break:break-word}
 .detail-title.long{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden;font-size:22px;font-weight:760;line-height:1.32;color:rgba(var(--color-text))}
 .detail-meta{display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-top:12px;padding-bottom:16px;border-bottom:1px solid rgba(var(--color-fillTertiary))}.detail-meta-icon{width:22px;height:22px;border-radius:6px;background:rgba(var(--color-fillSecondary));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:750;color:rgba(var(--color-textTertiary));overflow:hidden}.detail-meta-icon img{width:100%;height:100%;object-fit:cover}.detail-meta-source{font-size:13px;font-weight:620;color:rgba(var(--color-textSecondary))}.detail-meta-dot{width:3px;height:3px;border-radius:50%;background:rgba(var(--color-textTertiary));flex:0 0 3px}.detail-meta-plat{font-size:12px;color:rgba(var(--color-textTertiary))}.detail-meta-time{font-size:12px;color:rgba(var(--color-textTertiary));display:flex;align-items:center;gap:4px}
-.detail-ai{margin-top:24px;border-radius:12px;border:1px solid hsl(var(--fo-a) / .12);border-left:3px solid hsl(var(--fo-a) / .45);background:linear-gradient(135deg,hsl(var(--fo-a) / .035),transparent 54%);padding:20px 22px;overflow:hidden;box-shadow:0 2px 8px hsl(var(--fo-a) / .04)}.detail-ai-head{display:flex;align-items:center;gap:7px;color:hsl(var(--fo-a));font-size:14px;font-weight:720}.detail-ai-head svg{width:16px;height:16px;flex:0 0 16px}.detail-ai-body{margin-top:14px;font-size:15px;line-height:1.75;color:rgba(var(--color-text));white-space:pre-wrap;word-break:break-word}.detail-ai-label{margin-top:18px;font-size:12.5px;font-weight:660;color:rgba(var(--color-textSecondary))}.detail-ai-value{margin-top:6px;font-size:15px;line-height:1.72;color:rgba(var(--color-text))}
+.detail-ai{margin-top:24px;border-radius:12px;border:1px solid hsl(var(--fo-a) / .12);border-left:3px solid hsl(var(--fo-a) / .45);background:linear-gradient(135deg,hsl(var(--fo-a) / .035),transparent 54%);padding:20px 22px;overflow:hidden;box-shadow:0 2px 8px hsl(var(--fo-a) / .04)}.detail-ai-head{display:flex;align-items:center;gap:7px;color:hsl(var(--fo-a));font-size:14px;font-weight:720}.detail-ai-head svg{width:16px;height:16px;flex:0 0 16px}.detail-ai-body{margin-top:14px;font-size:15px;line-height:1.75;color:rgba(var(--color-text));word-break:break-word}.detail-ai-label{margin-top:18px;font-size:12.5px;font-weight:660;color:rgba(var(--color-textSecondary))}.detail-ai-value{margin-top:6px;font-size:15px;line-height:1.72;color:rgba(var(--color-text))}
+.detail-ai-body p,.fp-section-body p,.ai-body p{margin:0 0 10px}.detail-ai-body p:last-child,.fp-section-body p:last-child,.ai-body p:last-child{margin-bottom:0}.detail-ai-body h3,.fp-section-body h3,.ai-body h3{font-size:14.5px;font-weight:720;margin:14px 0 6px;color:rgba(var(--color-text))}.detail-ai-body h4,.fp-section-body h4,.ai-body h4{font-size:13.5px;font-weight:700;margin:10px 0 5px;color:rgba(var(--color-textSecondary))}.detail-ai-body ul,.fp-section-body ul,.ai-body ul{margin:6px 0;padding-left:20px}.detail-ai-body li,.fp-section-body li,.ai-body li{margin:3px 0}.detail-ai-body mark,.fp-section-body mark,.ai-body mark{background:hsl(var(--fo-a) / .18);color:inherit;padding:0 3px;border-radius:4px;font-weight:600}.detail-ai-body mark.hl-num,.fp-section-body mark.hl-num,.ai-body mark.hl-num{background:rgb(var(--color-blue) / .14);color:rgb(var(--color-blue));font-weight:700}.art-sep{display:inline-block;font-size:11px;font-weight:700;color:rgba(var(--color-textTertiary));margin:8px 0 4px}
 .detail-rec{margin-top:14px;padding:14px 16px;border-radius:10px;background:rgba(var(--color-fillQuaternary));border:1px solid rgba(var(--color-fillTertiary));border-left:3px solid rgba(var(--color-fillSecondary));color:rgba(var(--color-textSecondary));font-size:15px;line-height:1.68;font-weight:560}
 .detail-section{margin-top:20px;padding-top:16px;border-top:1px solid rgba(var(--color-fillTertiary))}
 .detail-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.detail-section-title{font-size:13px;font-weight:720;color:rgba(var(--color-textSecondary));letter-spacing:0}.detail-section-action{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;color:hsl(var(--fo-a));font-size:12px;font-weight:650;text-decoration:none}.detail-section-action:hover{text-decoration:underline}
@@ -3823,8 +3858,8 @@ function qualityDetailHtml(en){
   return html+'</span>';
 }
 function textHtml(s){return esc(String(s||"").trim()).replace(/\\n{3,}/g,"\\n\\n")}
-function articleHtml(s){if(!s)return"";var t=esc(String(s).trim()).replace(/\\n{3,}/g,"\\n\\n");t=t.replace(/([^\\n])([\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+\\u3001)/g,"$1\\n$2");t=t.replace(/([^\\n\\u3001])(\\d+\\u3001)/g,"$1\\n$2");t=t.replace(/([^\\n])(No\\.\\d+)/gi,"$1\\n$2");var lines=t.split(/\\n/);var out="";var ul=0;for(var i=0;i<lines.length;i++){var ln=lines[i].trim();if(!ln){if(ul){out+="</ul>";ul=0}continue}if(/^[\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+[\\u3001.]/.test(ln)){if(ul){out+="</ul>";ul=0}out+="<h3>"+artHL(ln)+"</h3>";continue}if(/^[\\uff08(][\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+[\\uff09)]/.test(ln)){if(ul){out+="</ul>";ul=0}out+="<h4>"+artHL(ln)+"</h4>";continue}if(/^No\\.\\d+$/i.test(ln)){if(ul){out+="</ul>";ul=0}out+='<span class="art-sep">'+ln+'</span>';continue}if(/^\\d{1,2}\\u3001/.test(ln)){if(!ul){out+="<ul>";ul=1}out+="<li>"+artHL(ln.replace(/^\\d{1,2}\\u3001\\s*/,""))+"</li>";continue}if(/^[\\xb7\\u2022\\-]\\s/.test(ln)){if(!ul){out+="<ul>";ul=1}out+="<li>"+artHL(ln.replace(/^[\\xb7\\u2022\\-]\\s+/,""))+"</li>";continue}if(ul){out+="</ul>";ul=0}out+="<p>"+artHL(ln)+"</p>"}if(ul)out+="</ul>";return out}
-function artHL(s){return s.replace(/\\u300a([^\\u300b]+)\\u300b/g,"<strong>\\u300a$1\\u300b</strong>").replace(/\\u3010([^\\u3011]+)\\u3011/g,"<strong>\\u3010$1\\u3011</strong>")}
+function articleHtml(s){if(!s)return"";var t=esc(String(s).trim()).replace(/\\n{3,}/g,"\\n\\n");if(t.indexOf("\\n")<0){var _sn=t.match(/[^\\u3002\\uff01\\uff1f!?\\n]+[\\u3002\\uff01\\uff1f!?]+/g);if(_sn&&_sn.length>=3){t="";for(var _k=0;_k<_sn.length;_k++){t+=_sn[_k];if((_k+1)%2===0&&_k<_sn.length-1)t+="\\n\\n"}}}t=t.replace(/([^\\n])([\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+\\u3001)/g,"$1\\n$2");t=t.replace(/([^\\n\\u3001])(\\d+\\u3001)/g,"$1\\n$2");t=t.replace(/([^\\n])(No\\.\\d+)/gi,"$1\\n$2");var lines=t.split(/\\n/);var out="";var ul=0;for(var i=0;i<lines.length;i++){var ln=lines[i].trim();if(!ln){if(ul){out+="</ul>";ul=0}continue}if(/^[\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+[\\u3001.]/.test(ln)){if(ul){out+="</ul>";ul=0}out+="<h3>"+artHL(ln)+"</h3>";continue}if(/^[\\uff08(][\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+[\\uff09)]/.test(ln)){if(ul){out+="</ul>";ul=0}out+="<h4>"+artHL(ln)+"</h4>";continue}if(/^No\\.\\d+$/i.test(ln)){if(ul){out+="</ul>";ul=0}out+='<span class="art-sep">'+ln+'</span>';continue}if(/^\\d{1,2}\\u3001/.test(ln)){if(!ul){out+="<ul>";ul=1}out+="<li>"+artHL(ln.replace(/^\\d{1,2}\\u3001\\s*/,""))+"</li>";continue}if(/^[\\xb7\\u2022\\-]\\s/.test(ln)){if(!ul){out+="<ul>";ul=1}out+="<li>"+artHL(ln.replace(/^[\\xb7\\u2022\\-]\\s+/,""))+"</li>";continue}if(ul){out+="</ul>";ul=0}out+="<p>"+artHL(ln)+"</p>"}if(ul)out+="</ul>";return out}
+function artHL(s){s=s.replace(/==([^=]+)==/g,'<mark>$1</mark>');s=s.replace(/\\u300a([^\\u300b]+)\\u300b/g,"<strong>\\u300a$1\\u300b</strong>").replace(/\\u3010([^\\u3011]+)\\u3011/g,"<strong>\\u3010$1\\u3011</strong>");s=s.replace(/(\\d+(?:\\.\\d+)?%|[\\u6da8\\u8dcc]\\u505c|[\\u6da8\\u8dcc](?:\\u8d85|\\u5e45)?\\s?\\d+(?:\\.\\d+)?%|\\d+(?:\\.\\d+)?(?:\\u4e07\\u4ebf|\\u4ebf|\\u4e07)\\u5143?)/g,'<mark class="hl-num">$1</mark>');return s}
 function translationText(en){
   var tr=en&&(en.translation||en.translated);if(!tr)return"";
   return tr.readabilityContent||tr.content||tr.description||"";
@@ -3862,7 +3897,7 @@ function renderDetail(entryId){
   h+='</div>';
   if(summary||reason||hasTranslation(en)){
     h+='<div class="detail-ai"><div class="detail-ai-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/></svg>AI \u603B\u7ED3</div>';
-    if(summary)h+='<div class="detail-ai-body">'+textHtml(summary)+'</div>';
+    if(summary)h+='<div class="detail-ai-body">'+articleHtml(summary)+'</div>';
     if(reason)h+='<div class="detail-ai-label">\u7CBE\u9009\u7406\u7531</div><div class="detail-rec">'+textHtml(reason)+'</div>';
     if(hasTranslation(en)){
       if(tr.title)h+='<div class="detail-ai-label">\u7FFB\u8BD1\u6807\u9898</div><div class="detail-ai-value">'+textHtml(tr.title)+'</div>';
@@ -3908,7 +3943,7 @@ function showFullDetail(entryId){
   h+='<h1 class="fp-title">'+esc(titleText)+'</h1>';
   h+='<div class="fp-date"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'+esc(dateStr)+(dateStr?" \u00B7 ":"")+esc(when(e.publishedAt))+'</div>';
   if(reason){h+='<div class="fp-reason"><div class="fp-reason-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.7 5.8 21 7 14.2 2 9.3l6.9-1z"/></svg>\u7CBE\u9009\u7406\u7531</div><div class="fp-reason-body">'+textHtml(reason)+'</div></div>'}
-  if(summary){h+='<div class="fp-section"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/></svg>AI \u6458\u8981</div><div class="fp-section-body">'+textHtml(summary)+'</div></div>'}
+  if(summary){h+='<div class="fp-section"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/></svg>AI \u6458\u8981</div><div class="fp-section-body">'+articleHtml(summary)+'</div></div>'}
   if(hasTranslation(en)){
     h+='<div class="fp-section"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>AI \u7FFB\u8BD1 \u00B7 \u4E2D\u6587</div><div class="fp-section-body" id="fp-trans-body">';
     if(tr.title)h+='<div style="font-weight:660;margin-bottom:8px">'+textHtml(tr.title)+'</div>';
@@ -3933,7 +3968,7 @@ function renderEntryInsight(e,en,f){
   if(reason){h+='<div class="ai-card"><div class="ai-head"><span class="ai-title"><span class="ai-dot"></span>\u7CBE\u9009\u7406\u7531</span></div><div class="ai-body">'+textHtml(reason)+'</div></div>';}
   h+='<div class="ai-card"><div class="ai-head"><span class="ai-title"><span class="ai-dot"></span>AI \u603B\u7ED3</span>';
   var score=scoreVal(en);var sl2=selLabel(en);if(sl2)h+='<span class="q q-'+scoreTier(score||0)+'">'+esc(sl2)+'</span>';else if(score!=null)h+='<span class="q q-'+scoreTier(score)+'">'+score+'</span>';
-  h+='</div><div class="ai-body">'+(summary?textHtml(summary):'暂无 AI 总结')+'</div>';
+  h+='</div><div class="ai-body">'+(summary?articleHtml(summary):'暂无 AI 总结')+'</div>';
   if(e.url)h+='<a class="ai-link" href="'+esc(e.url)+'" target="_blank" rel="noopener">打开原文 ↗</a>';
   h+='</div>';
   if(hasTranslation(en)){
@@ -4560,8 +4595,8 @@ function normalizeSummary(s){if(!s)return"";return s.replace(/\`\`\`[\\s\\S]*?\`
 function timeAgo(d){var diff=Date.now()-new Date(d).getTime();var m=Math.floor(diff/60000);if(m<1)return"刚刚";if(m<60)return m+"分钟前";var h=Math.floor(m/60);if(h<24)return h+"小时前";var days=Math.floor(h/24);if(days<30)return days+"天前";return new Date(d).toLocaleDateString("zh-CN")}
 function scoreTier(s){return s>=70?"high":s>=40?"medium":s>=20?"low":"ignore"}
 function feedInitial(title){if(!title)return"?";var c=title.charAt(0);return /[\\u4e00-\\u9fff]/.test(c)?c:c.toUpperCase()}
-function articleHtml(s){if(!s)return"";var t=esc(String(s).trim()).replace(/\\n{3,}/g,"\\n\\n");t=t.replace(/([^\\n])([\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+\\u3001)/g,"$1\\n$2");t=t.replace(/([^\\n\\u3001])(\\d+\\u3001)/g,"$1\\n$2");t=t.replace(/([^\\n])(No\\.\\d+)/gi,"$1\\n$2");var lines=t.split(/\\n/);var out="";var ul=0;for(var i=0;i<lines.length;i++){var ln=lines[i].trim();if(!ln){if(ul){out+="</ul>";ul=0}continue}if(/^[\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+[\\u3001.]/.test(ln)){if(ul){out+="</ul>";ul=0}out+="<h3>"+artHL(ln)+"</h3>";continue}if(/^[\\uff08(][\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+[\\uff09)]/.test(ln)){if(ul){out+="</ul>";ul=0}out+="<h4>"+artHL(ln)+"</h4>";continue}if(/^No\\.\\d+$/i.test(ln)){if(ul){out+="</ul>";ul=0}out+='<span class="art-sep">'+ln+'</span>';continue}if(/^\\d{1,2}\\u3001/.test(ln)){if(!ul){out+="<ul>";ul=1}out+="<li>"+artHL(ln.replace(/^\\d{1,2}\\u3001\\s*/,""))+"</li>";continue}if(/^[\\xb7\\u2022\\-]\\s/.test(ln)){if(!ul){out+="<ul>";ul=1}out+="<li>"+artHL(ln.replace(/^[\\xb7\\u2022\\-]\\s+/,""))+"</li>";continue}if(ul){out+="</ul>";ul=0}out+="<p>"+artHL(ln)+"</p>"}if(ul)out+="</ul>";return out}
-function artHL(s){return s.replace(/\\u300a([^\\u300b]+)\\u300b/g,"<strong>\\u300a$1\\u300b</strong>").replace(/\\u3010([^\\u3011]+)\\u3011/g,"<strong>\\u3010$1\\u3011</strong>")}
+function articleHtml(s){if(!s)return"";var t=esc(String(s).trim()).replace(/\\n{3,}/g,"\\n\\n");if(t.indexOf("\\n")<0){var _sn=t.match(/[^\\u3002\\uff01\\uff1f!?\\n]+[\\u3002\\uff01\\uff1f!?]+/g);if(_sn&&_sn.length>=3){t="";for(var _k=0;_k<_sn.length;_k++){t+=_sn[_k];if((_k+1)%2===0&&_k<_sn.length-1)t+="\\n\\n"}}}t=t.replace(/([^\\n])([\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+\\u3001)/g,"$1\\n$2");t=t.replace(/([^\\n\\u3001])(\\d+\\u3001)/g,"$1\\n$2");t=t.replace(/([^\\n])(No\\.\\d+)/gi,"$1\\n$2");var lines=t.split(/\\n/);var out="";var ul=0;for(var i=0;i<lines.length;i++){var ln=lines[i].trim();if(!ln){if(ul){out+="</ul>";ul=0}continue}if(/^[\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+[\\u3001.]/.test(ln)){if(ul){out+="</ul>";ul=0}out+="<h3>"+artHL(ln)+"</h3>";continue}if(/^[\\uff08(][\\u4e00\\u4e8c\\u4e09\\u56db\\u4e94\\u516d\\u4e03\\u516b\\u4e5d\\u5341]+[\\uff09)]/.test(ln)){if(ul){out+="</ul>";ul=0}out+="<h4>"+artHL(ln)+"</h4>";continue}if(/^No\\.\\d+$/i.test(ln)){if(ul){out+="</ul>";ul=0}out+='<span class="art-sep">'+ln+'</span>';continue}if(/^\\d{1,2}\\u3001/.test(ln)){if(!ul){out+="<ul>";ul=1}out+="<li>"+artHL(ln.replace(/^\\d{1,2}\\u3001\\s*/,""))+"</li>";continue}if(/^[\\xb7\\u2022\\-]\\s/.test(ln)){if(!ul){out+="<ul>";ul=1}out+="<li>"+artHL(ln.replace(/^[\\xb7\\u2022\\-]\\s+/,""))+"</li>";continue}if(ul){out+="</ul>";ul=0}out+="<p>"+artHL(ln)+"</p>"}if(ul)out+="</ul>";return out}
+function artHL(s){s=s.replace(/==([^=]+)==/g,'<mark>$1</mark>');s=s.replace(/\\u300a([^\\u300b]+)\\u300b/g,"<strong>\\u300a$1\\u300b</strong>").replace(/\\u3010([^\\u3011]+)\\u3011/g,"<strong>\\u3010$1\\u3011</strong>");s=s.replace(/(\\d+(?:\\.\\d+)?%|[\\u6da8\\u8dcc]\\u505c|[\\u6da8\\u8dcc](?:\\u8d85|\\u5e45)?\\s?\\d+(?:\\.\\d+)?%|\\d+(?:\\.\\d+)?(?:\\u4e07\\u4ebf|\\u4ebf|\\u4e07)\\u5143?)/g,'<mark class="hl-num">$1</mark>');return s}
 
 // ── Platform filter tabs (matches PLATFORM_LABELS) ──
 var platformTabs=[{key:"all",label:"全部"},{key:"xueqiu",label:"雪球"},{key:"weibo",label:"微博"},{key:"twitter",label:"推特"},{key:"wechat",label:"公众号"},{key:"other",label:"其他"}];
