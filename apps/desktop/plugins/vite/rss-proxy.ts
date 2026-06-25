@@ -2681,6 +2681,139 @@ export function rssProxyPlugin(): PluginOption {
       server.middlewares.use("/api/public/refresh", handleRefreshWatchlist)
       server.middlewares.use("/api/public/refresh-weibo", handleRefreshWatchlist)
 
+      // ─── Grok native X support (replaces/supplements fragile local RSSHub for X) ───
+      // The agent (Grok) uses its built-in x_keyword_search / x_semantic_search tools
+      // to fetch fresh posts for watchlist "x" users, normalizes to CachedEntry format,
+      // and writes to .finhot-cache/x_grok_entries.json or directly calls this.
+      // This avoids Nitter/RSSHub instability.
+      interface GrokXPost {
+        id: string
+        source: string
+        title?: string
+        content: string
+        url: string
+        ts: number // unix seconds
+      }
+
+      function loadGrokXEntries(): CachedEntry[] {
+        const grokFile = join(cacheDir || ensureCacheDir(projectRoot), "x_grok_entries.json")
+        if (!existsSync(grokFile)) return []
+        try {
+          const raw: GrokXPost[] = JSON.parse(readFileSync(grokFile, "utf-8"))
+          return raw.map((p) => {
+            const screen = (p.source || "").replace(/^X@/, "").replace(/ \(native\)$/, "")
+            const feedUrl = `finhot://twitter/${screen || "grok"}`
+            const feedId = generateId(feedUrl)
+            return {
+              id: p.id,
+              title: p.title || null,
+              url: p.url,
+              content: p.content,
+              description: p.content.slice(0, 300),
+              author: p.source,
+              authorUrl: `https://x.com/${screen}`,
+              authorAvatar: null,
+              insertedAt: new Date().toISOString(),
+              publishedAt: new Date(p.ts * 1000).toISOString(),
+              media: null,
+              categories: null,
+              attachments: null,
+              extra: null,
+              language: "zh-CN",
+              feedId,
+              inboxHandle: null,
+              read: false,
+              sources: null,
+              settings: null,
+            }
+          })
+        } catch {
+          return []
+        }
+      }
+
+      async function importGrokX(): Promise<number> {
+        const entries = loadGrokXEntries()
+        if (entries.length === 0) return 0
+        // Group by feedId (per user)
+        const byFeed: Record<string, CachedEntry[]> = {}
+        for (const e of entries) {
+          byFeed[e.feedId] ??= []
+          byFeed[e.feedId]!.push(e)
+        }
+        let count = 0
+        for (const [fid, es] of Object.entries(byFeed)) {
+          // Create synthetic feed
+          const screen = es[0]?.author?.replace(/^X@/, "") || "grok-x"
+          const feed = {
+            id: fid,
+            title: `${screen} - X (native)`,
+            url: `finhot://twitter/${screen}`,
+            description: `Grok native fetch for @${screen}`,
+            image: null,
+            errorAt: null,
+            siteUrl: `https://x.com/${screen}`,
+            ownerUserId: null,
+            errorMessage: null,
+            subscriptionCount: null,
+            updatesPerWeek: null,
+            latestEntryPublishedAt: es[0]?.publishedAt || null,
+            tipUserIds: null,
+            updatedAt: new Date().toISOString(),
+          }
+          cacheFeedResult(feed, es, "推特 (native grok)")
+          count += es.length
+        }
+        return count
+      }
+
+      // Manual trigger for Grok X refresh (agent writes the json first, then calls this)
+      server.middlewares.use("/api/public/refresh-x-grok", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const count = await importGrokX()
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(JSON.stringify({ ok: true, imported: count }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Grok X refresh failed"
+          res.writeHead(502, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
+      // Optional: full refresh that includes grok X (extend previous 5-class refresh)
+      server.middlewares.use("/api/public/refresh", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const weibo = await autoImportWeiboFeeds()
+          const grokX = await importGrokX()
+          // Other types (xueqiu, wechat, rss) can be triggered similarly or via their own
+          const total = weibo + grokX
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(JSON.stringify({ ok: true, imported: total, breakdown: { weibo, grokX } }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Full refresh failed"
+          res.writeHead(502, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
+
       // ─── /api/public/deploy — Build static HTML and deploy to Cloudflare Pages ───
       server.middlewares.use("/api/public/deploy", async (req, res) => {
         if (handleCors(req, res)) return

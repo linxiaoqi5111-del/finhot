@@ -22,6 +22,7 @@ import xml.etree.ElementTree as ET
 import requests
 
 from .sources import UA, TIMEOUT, _mkid, _strip_html
+from .x_grok import load_grok_items  # native X supplement via agent tools
 
 WATCHLIST_PATH = os.path.join(os.path.dirname(__file__), "..", "watchlist.json")
 WEIBO_COOKIE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "weibo_cookie.txt")
@@ -318,4 +319,17 @@ def fetch_watchlist():
             items.extend(fetch_rss(url, name))
         except Exception as e:  # noqa: BLE001
             errors[f"rss:{name}"] = str(e)
+
+    # === Native X supplement (preferred for reliability) ===
+    # Populated by asking the agent to use built-in X tools (x_keyword_search etc.)
+    # and saving the normalized items to data/x_grok.json
+    # Falls back to (or augments) the RSS/Nitter path for "x" users.
+    try:
+        native_items = load_grok_items()
+        if native_items:
+            items.extend(native_items)
+            # optional: mark how many
+    except Exception as e:  # noqa: BLE001
+        errors["x:native"] = str(e)
+
     return items, errors
