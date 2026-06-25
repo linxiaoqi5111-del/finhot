@@ -4725,7 +4725,34 @@ function generateId(input: string): string {
   return crypto.createHash("sha256").update(input).digest("hex").slice(0, 32)
 }
 
-function parseRssFeed(xml: string, feedUrl: string, limit: number) {
+/**
+ * Canonicalize an HTTP(S) feed URL so the same source spelled differently
+ * (e.g. `127.0.0.1:8090` vs `localhost:8090`, or with a default port) maps to
+ * one feed/entry id. Without this, the same wechat2rss/RSSHub feed registered
+ * under two host spellings produces duplicate feeds and entries on the public
+ * page. Non-HTTP URLs (e.g. `finhot://...`) are returned unchanged.
+ */
+function normalizeFeedUrl(rawUrl: string): string {
+  if (!/^https?:\/\//i.test(rawUrl)) return rawUrl
+  try {
+    const u = new URL(rawUrl)
+    let host = u.hostname.toLowerCase()
+    if (host === "127.0.0.1" || host === "::1" || host === "[::1]") host = "localhost"
+    u.hostname = host
+    if (
+      (u.protocol === "http:" && u.port === "80") ||
+      (u.protocol === "https:" && u.port === "443")
+    ) {
+      u.port = ""
+    }
+    return u.toString()
+  } catch {
+    return rawUrl
+  }
+}
+
+function parseRssFeed(xml: string, rawFeedUrl: string, limit: number) {
+  const feedUrl = normalizeFeedUrl(rawFeedUrl)
   const isAtom = xml.includes("<feed") && xml.includes('xmlns="http://www.w3.org/2005/Atom"')
 
   const feedTitle = extractTag(xml, isAtom ? "title" : "title") ?? feedUrl
