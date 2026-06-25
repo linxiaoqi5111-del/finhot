@@ -201,6 +201,15 @@ function planRefreshAt(hour: number, minute: number): RefreshPlan | null {
   return { watchlist, grokX: refreshMarket }
 }
 
+// Whether the given Beijing time is inside the intraday trading window
+// (09:30–15:00). Used to gate the startup warm-up so that (re)starting the
+// dev server outside trading hours never scrapes 微博/雪球.
+function isIntradayWindow(hour: number, minute: number): boolean {
+  const afterOpen = hour > 9 || (hour === 9 && minute >= 30)
+  const beforeClose = hour < 15 || (hour === 15 && minute === 0)
+  return afterOpen && beforeClose
+}
+
 interface WatchlistRssSource {
   name: string
   url: string
@@ -1439,18 +1448,24 @@ export function rssProxyPlugin(): PluginOption {
       const rootDir = server.config.root ? resolvePath(server.config.root, "../..") : process.cwd()
       ensureCacheDir(rootDir)
 
-      // Warm the cache once on startup: watchlist (weibo / xueqiu / wechat) + Grok X.
+      // Warm the cache once on startup, respecting the schedule so that
+      // (re)starting the dev server outside trading hours never scrapes.
+      // Grok X is always re-imported (it only reads a local seed file, no
+      // network scraping); 微博/雪球 are only warmed during the 09:30–15:00
+      // intraday window.
       void (async () => {
-        try {
-          const n = await autoImportWatchlistFeeds()
-          if (n > 0) console.info(`[FinHot] Auto-imported ${n} watchlist feeds`)
-        } catch {
-          /* sources unavailable — skip silently */
-        }
         try {
           await importGrokX()
         } catch {
           /* skip */
+        }
+        const { hour, minute } = beijingTimeParts(new Date())
+        if (!isIntradayWindow(hour, minute)) return
+        try {
+          const n = await autoImportWatchlistFeeds(["微博", "雪球"])
+          if (n > 0) console.info(`[FinHot] Auto-imported ${n} watchlist feeds`)
+        } catch {
+          /* sources unavailable — skip silently */
         }
       })()
 
