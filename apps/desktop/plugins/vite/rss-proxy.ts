@@ -2957,26 +2957,31 @@ export function rssProxyPlugin(): PluginOption {
       // auto-deploy step. Returns the deployed preview URL.
       async function deployPublicSite(cfApiToken: string, cfAccountId: string): Promise<string> {
         const manifest = readManifest()
-        const feeds = Object.values(manifest.feeds).sort(
+        const enrichments = readEnrichments()
+        const allFeeds = Object.values(manifest.feeds).sort(
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
         )
+        // Apply the same platform-aware score gate as /api/public/items:
+        // WeChat bypasses, all other platforms need qualityScore >= threshold.
+        // Feeds left with no qualifying entries are dropped from the page.
         const entriesByFeed: Record<string, CachedEntry[]> = {}
-        for (const feed of feeds) {
+        for (const feed of allFeeds) {
           const entriesFile = join(cacheDir, "entries", `${feed.id}.json`)
-          if (existsSync(entriesFile)) {
-            try {
-              entriesByFeed[feed.id] = JSON.parse(readFileSync(entriesFile, "utf-8"))
-            } catch {
-              /* skip */
-            }
+          if (!existsSync(entriesFile)) continue
+          try {
+            const parsed: CachedEntry[] = JSON.parse(readFileSync(entriesFile, "utf-8"))
+            const gated = parsed.filter((e) => passesScoreGateServer(e, enrichments, manifest))
+            if (gated.length > 0) entriesByFeed[feed.id] = gated
+          } catch {
+            /* skip */
           }
         }
+        const feeds = allFeeds.filter((f) => entriesByFeed[f.id]?.length)
         const allEntries = Object.values(entriesByFeed)
           .flat()
           .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
           .slice(0, 500)
 
-        const enrichments = readEnrichments()
         // Strip embeddings from enrichments to reduce page size
         const enrichmentsForPage: Record<string, any> = {}
         for (const [id, en] of Object.entries(enrichments)) {
