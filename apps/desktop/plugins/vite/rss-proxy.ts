@@ -166,7 +166,7 @@ const WATCHLIST_FETCH_TIMEOUT_MS = 15_000
 const SCHEDULE_TIMEZONE = "Asia/Shanghai"
 const SCHEDULE_TICK_MS = 30 * 1000
 
-type WatchlistCategory = "微博" | "雪球" | "微信"
+type WatchlistCategory = "微博" | "雪球" | "微信" | "推特"
 
 interface RefreshPlan {
   watchlist: WatchlistCategory[]
@@ -210,7 +210,7 @@ function planRefreshAt(hour: number, minute: number): RefreshPlan | null {
   if (!refreshMarket && !refreshWechat) return null
 
   const watchlist: WatchlistCategory[] = []
-  if (refreshMarket) watchlist.push("微博", "雪球")
+  if (refreshMarket) watchlist.push("微博", "雪球", "推特")
   if (refreshWechat) watchlist.push("微信")
   return { watchlist, grokX: refreshMarket }
 }
@@ -242,7 +242,8 @@ interface WatchlistImportJob {
   category: string
   // "rss": fetch + parse as RSS/Atom XML.
   // "xueqiu": scrape via headful Playwright (bypasses Aliyun WAF, no cookie needed).
-  kind: "rss" | "xueqiu"
+  // "twitter": fetch via Nitter/RSSHub (fetchTwitterFeedViaRss).
+  kind: "rss" | "xueqiu" | "twitter"
   // Source-specific identifier (e.g. xueqiu user id) for non-RSS kinds.
   ref?: string
 }
@@ -275,10 +276,13 @@ function loadWatchlist(): WatchlistData {
 //  - xueqiu: scraped via headful Playwright (xueqiu-scraper.mjs); bypasses the
 //    Aliyun WAF and needs no cookie, so it does NOT go through RSSHub.
 //  - wechat ({ name, url }): fetched directly as-is.
-// X is intentionally excluded here: it is served by the native Grok importer
-// (importGrokX / x_grok_entries.json), not by RSSHub. The watchlist `rss`
-// type is also excluded — generic feeds are managed via the app's own
-// subscription system, not this auto-importer.
+//  - x (推特): fetched via Nitter/RSSHub (fetchTwitterFeedViaRss). This is the
+//    second X ingestion path that runs ALONGSIDE the native Grok importer
+//    (importGrokX / x_grok_entries.json); both paths share the same
+//    finhot://twitter/<handle> feed and derive entry ids from the tweet status
+//    id, so the same tweet from either path collapses to one entry.
+// The watchlist `rss` type is excluded — generic feeds are managed via the
+// app's own subscription system, not this auto-importer.
 // Plain-string wechat names are skipped because resolving them needs a
 // wechat2rss endpoint + token, which is not available to this plugin.
 function buildWatchlistImportJobs(data: WatchlistData): WatchlistImportJob[] {
@@ -292,6 +296,16 @@ function buildWatchlistImportJobs(data: WatchlistData): WatchlistImportJob[] {
   for (const item of data.wechat ?? []) {
     if (typeof item === "object" && item.url) {
       jobs.push({ url: item.url, category: "微信", kind: "rss" })
+    }
+  }
+  for (const handle of data.x ?? []) {
+    if (typeof handle === "string" && handle.trim()) {
+      jobs.push({
+        url: `finhot://twitter/${handle}`,
+        category: "推特",
+        kind: "twitter",
+        ref: handle,
+      })
     }
   }
   return jobs
@@ -334,6 +348,9 @@ async function runWatchlistImportJob(job: WatchlistImportJob): Promise<{
     } catch {
       return null
     }
+  }
+  if (job.kind === "twitter" && job.ref) {
+    return fetchTwitterFeedViaRss(job.ref, RSS_ENTRY_LIMIT)
   }
   return fetchAndParseFeed(job.url)
 }
@@ -1768,6 +1785,88 @@ function resolveTwitterScreenName(url: string): string | null {
   return null
 }
 
+/**
+ * Extract the numeric status id from a tweet URL (x.com / twitter.com / Nitter
+ * mirrors). Used to derive a stable, path-independent entry id so the same
+ * tweet ingested via the RSS path (fetchTwitterFeedViaRss) and the native Grok
+ * path (importGrokX) collapses to a single cached entry instead of duplicating.
+ */
+function twitterStatusId(link: string | null): string | null {
+  if (!link) return null
+  const match = /\/status(?:es)?\/(\d+)/.exec(link)
+  return match ? match[1]! : null
+}
+
+/** Canonical entry id for a tweet, shared by both X ingestion paths. */
+function twitterEntryId(link: string | null, fallbackId: string): string {
+  const sid = twitterStatusId(link)
+  return sid ? generateId(`x:status:${sid}`) : fallbackId
+}
+
+/**
+ * Fetch an X/Twitter user's timeline as a parsed feed via RSS, trying Nitter
+ * instances first, then the local RSSHub (localhost:1200), then public RSSHub.
+ * Entry URLs are normalized back to x.com and entry ids are rederived from the
+ * tweet status id so this path dedups against the native Grok importer.
+ * Returns null when every source fails. This is the RSS half of X dual-path.
+ */
+async function fetchTwitterFeedViaRss(
+  handle: string,
+  limit: number,
+): Promise<{
+  feed: ReturnType<typeof parseRssFeed>["feed"]
+  entries: ReturnType<typeof parseRssFeed>["entries"]
+} | null> {
+  const FRESHRSS_UA = "FreshRSS/1.24.0 (Linux; https://freshrss.org)"
+  const twitterRssSources: { url: string; ua?: string }[] = [
+    // Nitter/xcancel instances — primary, most reliable for Twitter RSS
+    { url: `https://xcancel.com/${handle}/rss`, ua: FRESHRSS_UA },
+    { url: `https://nitter.privacyredirect.com/${handle}/rss`, ua: FRESHRSS_UA },
+    // Local RSSHub (when running)
+    { url: `${RSSHUB_BASE_URL}/twitter/user/${handle}` },
+    // Public RSSHub instances (least reliable for Twitter)
+    { url: `https://rsshub.bestblogs.dev/twitter/user/${handle}` },
+    { url: `https://rsshub.app/twitter/user/${handle}` },
+  ]
+
+  let xml: string | null = null
+  for (const source of twitterRssSources) {
+    try {
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 10_000)
+      const res = await fetch(source.url, {
+        signal: controller.signal,
+        headers: {
+          Accept: "application/rss+xml, application/xml, text/xml",
+          ...(source.ua ? { "User-Agent": source.ua } : {}),
+        },
+      })
+      clearTimeout(timeout)
+      if (res.ok) {
+        const text = await res.text()
+        const isXml = text.includes("<rss") || text.includes("<feed") || text.includes("<?xml")
+        const hasErrorMarker = /not yet whitelisted|Rate limit|suspended/i.test(text)
+        if (isXml && !hasErrorMarker) {
+          xml = text
+          break
+        }
+      }
+    } catch {
+      continue
+    }
+  }
+
+  if (!xml) return null
+
+  const feedUrl = `finhot://twitter/${handle}`
+  const result = parseRssFeed(xml, feedUrl, limit)
+  for (const entry of result.entries) {
+    entry.url = normalizeNitterUrl(entry.url)
+    entry.id = twitterEntryId(entry.url, entry.id)
+  }
+  return result
+}
+
 export function rssProxyPlugin(): PluginOption {
   return {
     name: "rss-proxy",
@@ -1878,58 +1977,11 @@ export function rssProxyPlugin(): PluginOption {
           // Built-in Twitter-to-RSS: try Nitter instances first (most reliable), then RSSHub
           const twitterHandle = resolveTwitterScreenName(url)
           if (twitterHandle) {
-            const FRESHRSS_UA = "FreshRSS/1.24.0 (Linux; https://freshrss.org)"
-            const twitterRssSources: { url: string; ua?: string }[] = [
-              // Nitter/xcancel instances — primary, most reliable for Twitter RSS
-              { url: `https://xcancel.com/${twitterHandle}/rss`, ua: FRESHRSS_UA },
-              { url: `https://nitter.privacyredirect.com/${twitterHandle}/rss`, ua: FRESHRSS_UA },
-              // Local RSSHub (when running)
-              { url: `http://localhost:1200/twitter/user/${twitterHandle}` },
-              // Public RSSHub instances (least reliable for Twitter)
-              { url: `https://rsshub.bestblogs.dev/twitter/user/${twitterHandle}` },
-              { url: `https://rsshub.app/twitter/user/${twitterHandle}` },
-            ]
-
-            let xml: string | null = null
-            for (const source of twitterRssSources) {
-              try {
-                const controller = new AbortController()
-                const timeout = setTimeout(() => controller.abort(), 10_000)
-                const rsshubRes = await fetch(source.url, {
-                  signal: controller.signal,
-                  headers: {
-                    Accept: "application/rss+xml, application/xml, text/xml",
-                    ...(source.ua ? { "User-Agent": source.ua } : {}),
-                  },
-                })
-                clearTimeout(timeout)
-                if (rsshubRes.ok) {
-                  const text = await rsshubRes.text()
-                  const isXml =
-                    text.includes("<rss") || text.includes("<feed") || text.includes("<?xml")
-                  // Reject responses that look like XML but contain known error markers
-                  const hasErrorMarker = /not yet whitelisted|Rate limit|suspended/i.test(text)
-                  if (isXml && !hasErrorMarker) {
-                    xml = text
-                    break
-                  }
-                }
-              } catch {
-                continue
-              }
-            }
-
-            if (!xml) {
+            const result = await fetchTwitterFeedViaRss(twitterHandle, limit ?? RSS_ENTRY_LIMIT)
+            if (!result) {
               throw new Error(
                 `Twitter RSS 暂不可用：所有 Nitter 实例和 RSSHub 公共实例均无法访问。请启动本地 RSSHub (localhost:1200) 或稍后重试。`,
               )
-            }
-
-            const feedUrl = `finhot://twitter/${twitterHandle}`
-            const result = parseRssFeed(xml, feedUrl, limit ?? RSS_ENTRY_LIMIT)
-            // Normalize Nitter URLs back to x.com in parsed entries
-            for (const entry of result.entries) {
-              entry.url = normalizeNitterUrl(entry.url)
             }
             cacheFeedResult(result.feed, result.entries, "推特")
             res.writeHead(200, {
@@ -3098,7 +3150,7 @@ export function rssProxyPlugin(): PluginOption {
             const feedUrl = `finhot://twitter/${screen || "grok"}`
             const feedId = generateId(feedUrl)
             return {
-              id: p.id,
+              id: twitterEntryId(p.url, p.id),
               title: p.title || null,
               url: p.url,
               content: p.content,
@@ -3154,7 +3206,7 @@ export function rssProxyPlugin(): PluginOption {
             tipUserIds: null,
             updatedAt: new Date().toISOString(),
           }
-          cacheFeedResult(feed, es, "推特 (native grok)")
+          cacheFeedResult(feed, es, "推特")
           count += es.length
         }
         return count
