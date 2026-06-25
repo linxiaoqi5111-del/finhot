@@ -11,7 +11,7 @@
       "enabled": true,
     },
   },
-  "account_id": "1f1d1678a2413a54c944b3081bab5c84",
+  "account_id": "f186c359c3a0394dbf77e4f5a4990aa3",
   "assets": {
     "directory": "./out/web",
     "not_found_handling": "single-page-application",
