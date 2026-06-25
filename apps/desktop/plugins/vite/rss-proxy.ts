@@ -819,10 +819,15 @@ function passesScoreGateServer(
 ): boolean {
   const feed = manifest.feeds[entry.feedId]
   if (!feed) return false
+  const en = enrichments[entry.id]
+  // Only surface entries scored with the canonical 6-dimension system.
+  // Legacy ad-hoc enrichments (single qualityScore, no `scores`) are excluded.
+  if (!en?.qualityDetails?.scores || Object.keys(en.qualityDetails.scores).length === 0) {
+    return false
+  }
   const p = detectPlatform(feed.url, feed.category)
   if (p === "wechat") return true
-  const en = enrichments[entry.id]
-  const qs = en?.qualityScore
+  const qs = en.qualityScore
   return qs != null && qs >= SCORE_GATE_THRESHOLD
 }
 
@@ -4252,7 +4257,7 @@ function getPlatform(feedUrl,cat){
   return"other";
 }
 var SCORE_GATE_SV=55;
-function passesScoreGateSV(e){var f=feedMap[e.feedId];if(!f)return false;var p=getPlatform(f.url,f.category);if(p==="wechat")return true;var en=enrichments[e.id];var qs=en&&en.qualityScore;return qs!=null&&qs>=SCORE_GATE_SV}
+function passesScoreGateSV(e){var f=feedMap[e.feedId];if(!f)return false;var en=enrichments[e.id];var sc=en&&en.qualityDetails&&en.qualityDetails.scores;if(!sc||Object.keys(sc).length===0)return false;var p=getPlatform(f.url,f.category);if(p==="wechat")return true;var qs=en.qualityScore;return qs!=null&&qs>=SCORE_GATE_SV}
 
 // ── Sidebar feed list (grouped by category) ──
 var collapsedCats={};
