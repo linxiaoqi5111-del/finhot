@@ -40,6 +40,13 @@ const TOPIC_SIMILARITY_THRESHOLD = 0.78
 const ENRICH_RECENCY_DAYS = 3
 const ENRICH_PER_FEED_LIMIT = 5 // 每 feed 最多处理最近 N 条需要 AI 的，对齐 Focal 新订阅只摘前 5 条 + 时效控制
 
+// Local/OpenAI-compatible embeddings endpoint (e.g. a bge-m3 FastAPI server on
+// the Mac). When set, server-side enrichment generates an embedding for each
+// gated-in entry so topic clustering works without depending on the app. When
+// empty, embedding generation is skipped (no-op, safe for CI/other envs).
+const EMBEDDING_BASE_URL = (process.env.FINHOT_EMBEDDING_BASE_URL || "").replace(/\/+$/, "")
+const EMBEDDING_MODEL = process.env.FINHOT_EMBEDDING_MODEL || "bge-m3"
+
 const DETAIL_ALLOWED_TAGS = new Set([
   "a",
   "blockquote",
@@ -519,6 +526,74 @@ Return JSON following this schema:
 }
 
 /**
+ * Rich-summary prompt (step 2). Produces a multi-sentence Simplified-Chinese
+ * summary, generated ONLY for entries that clear the public score gate so the
+ * cheap one-sentence summary from the scoring call is the only cost paid for
+ * entries that will never be shown.
+ */
+const RICH_SUMMARY_SYSTEM_PROMPT = `你是一名专业的财经/科技内容编辑。请用简体中文写一段中立、信息密度高的摘要，让读者不打开原文也能快速抓住要点。
+要求：
+- 3-5 句，约 120-220 字。
+- 覆盖核心事实、关键数据或观点、以及对读者的意义；不夸张、不臆测、不照抄标题。
+- 纯文本输出，不要 markdown、不要项目符号、不要任何前后缀（如"摘要："）。`
+
+function buildRichSummaryUserPrompt(source: string): string {
+  return `请为下面的内容写一段富摘要（3-5 句，简体中文）。\n\n${source}`
+}
+
+/** Step 2a: generate a rich multi-sentence summary. Returns null on any failure. */
+async function generateRichSummary(
+  apiURL: string,
+  apiKey: string,
+  model: string,
+  source: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch(apiURL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: "system", content: RICH_SUMMARY_SYSTEM_PROMPT },
+          { role: "user", content: buildRichSummaryUserPrompt(source) },
+        ],
+        temperature: 0.2,
+        stream: false,
+      }),
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { choices?: { message?: { content?: string } }[] }
+    const text = data.choices?.[0]?.message?.content?.trim()
+    return text && text.length > 0 ? text : null
+  } catch {
+    return null
+  }
+}
+
+/** Step 2b: generate a local embedding via the OpenAI-compatible endpoint. */
+async function generateServerEmbedding(text: string): Promise<number[] | null> {
+  if (!EMBEDDING_BASE_URL || !text.trim()) return null
+  try {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30_000)
+    const res = await fetch(`${EMBEDDING_BASE_URL}/embeddings`, {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: EMBEDDING_MODEL, input: text.slice(0, 8000) }),
+    })
+    clearTimeout(timeout)
+    if (!res.ok) return null
+    const data = (await res.json()) as { data?: { embedding?: number[] }[] }
+    const vec = data.data?.[0]?.embedding
+    return Array.isArray(vec) && vec.length > 0 ? vec : null
+  } catch {
+    return null
+  }
+}
+
+/**
  * Parse the LLM JSON response (tolerates code fences / extra text) and validate
  * it against the canonical 6-dimension schema. Returns the full
  * EntryQualityScoreRecord (with quality_score derived via calculateQualityScore)
@@ -549,11 +624,16 @@ interface EnrichResult {
 }
 
 /**
- * Server-side AI enrichment: for cached entries missing a summary or a
- * qualityScore, generates BOTH in a single LLM call per entry and merges the
- * result into enrichments.json. Without an LLM key (FINHOT_AI_API_KEY) this is
- * a no-op, so the scheduler can call it unconditionally. Producing qualityScore
- * is what lets non-WeChat platforms (微博/雪球/X) pass the public score gate.
+ * Server-side AI enrichment (two-step):
+ *  1. Score the entry (6-dimension qualityScore) and store a cheap one-sentence
+ *     fallback summary from the same call.
+ *  2. ONLY for entries that clear the public score gate, spend an extra call on
+ *     a rich multi-sentence summary, and (when FINHOT_EMBEDDING_BASE_URL is set)
+ *     generate a local embedding for topic clustering.
+ * This saves tokens (no rich summary for entries that will never be shown) and
+ * makes shown entries' summaries richer. Without an LLM key (FINHOT_AI_API_KEY)
+ * this is a no-op, so the scheduler can call it unconditionally. Producing
+ * qualityScore is what lets non-WeChat platforms (微博/雪球/X) pass the gate.
  *
  * 候选筛选逻辑（关键优化）：
  * - 时间窗口：默认只处理最近 ENRICH_RECENCY_DAYS=3 天（金融消息时效性）。
@@ -688,6 +768,25 @@ async function enrichMissingEntries(
       // Surface the strongest positive reason as the recommendation rationale.
       if (parsed.positive_reasons[0]) merged.recommendationReason = parsed.positive_reasons[0]
       enrichments[entry.id] = merged
+
+      // Step 2: only entries that clear the public score gate get a rich summary
+      // (and, if configured, a local embedding). Entries that won't be shown keep
+      // the cheap one-sentence summary from step 1, saving tokens.
+      if (passesScoreGateServer(entry, enrichments, manifest)) {
+        const rich = await generateRichSummary(apiURL, apiKey, model, source)
+        if (rich) {
+          merged.summary = rich
+          if (merged.qualityDetails) merged.qualityDetails.summary = rich
+        }
+        if (EMBEDDING_BASE_URL && !merged.embedding?.length) {
+          const embedText = [titleText, rich || parsed.summary, textContent]
+            .filter(Boolean)
+            .join("\n")
+          const vec = await generateServerEmbedding(embedText)
+          if (vec) merged.embedding = vec
+        }
+        enrichments[entry.id] = merged
+      }
       enriched++
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err)
