@@ -3654,7 +3654,7 @@ function showFullDetail(entryId){
     if(tr.title)h+='<div style="font-weight:660;margin-bottom:8px">'+textHtml(tr.title)+'</div>';
     if(translatedBody)h+=textHtml(translatedBody);
     h+='</div></div>';
-    if(bodyText){h+='<button class="fp-toggle" id="fp-toggle-orig">\u663E\u793A\u539F\u6587</button><div class="fp-section" id="fp-orig-section" style="display:none"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>\u539F\u6587</div><div class="fp-section-body fp-article">'+articleHtml(bodyText)+'</div></div>'}
+    if(bodyText){h+='<div class="fp-section"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>\u539F\u6587</div><div class="fp-section-body fp-article">'+articleHtml(bodyText)+'</div></div>'}
   } else if(bodyText){
     h+='<div class="fp-section"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>\u539F\u6587</div><div class="fp-section-body fp-article">'+articleHtml(bodyText)+'</div></div>';
   }
@@ -4420,7 +4420,7 @@ function showFullDetail(entryId){
     if(tr.title)h+='<div style="font-weight:660;margin-bottom:8px">'+esc(tr.title)+'</div>';
     if(translatedBody)h+=esc(translatedBody);
     h+='</div></div>';
-    if(bodyText){h+='<button class="fp-toggle" id="fp-toggle-orig">\u663E\u793A\u539F\u6587</button><div class="fp-section" id="fp-orig-section" style="display:none"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>\u539F\u6587</div><div class="fp-section-body fp-article">'+articleHtml(bodyText)+'</div></div>'}
+    if(bodyText){h+='<div class="fp-section"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>\u539F\u6587</div><div class="fp-section-body fp-article">'+articleHtml(bodyText)+'</div></div>'}
   } else if(bodyText){
     h+='<div class="fp-section"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>\u539F\u6587</div><div class="fp-section-body fp-article">'+articleHtml(bodyText)+'</div></div>';
   }
