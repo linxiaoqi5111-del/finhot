@@ -177,6 +177,10 @@ const WATCHLIST_FETCH_CONCURRENCY = 5
 const WATCHLIST_FETCH_TIMEOUT_MS = 15_000
 // Guest weibo API spacing (ms). Mirrors finhot Python WEIBO_SLEEP; lower default for dev refresh.
 const WEIBO_SLEEP_MS = Number(process.env.WEIBO_SLEEP_MS ?? "2000")
+// Spacing between per-post long-text detail fetches (statuses/extend).
+const WEIBO_DETAIL_SLEEP_MS = Number(process.env.WEIBO_DETAIL_SLEEP_MS ?? "600")
+// Cap long-text expansions per uid per refresh to avoid guest API -100 rate limits.
+const WEIBO_DETAIL_MAX_PER_UID = Number(process.env.WEIBO_DETAIL_MAX_PER_UID ?? "20")
 // Scheduler runs in Beijing time (Asia/Shanghai, fixed UTC+8, no DST).
 const SCHEDULE_TIMEZONE = "Asia/Shanghai"
 const SCHEDULE_TICK_MS = 30 * 1000
@@ -382,7 +386,8 @@ async function runWatchlistImportJob(job: WatchlistImportJob): Promise<{
   if (job.kind === "weibo" && job.ref) {
     try {
       const { mblogs, screenName } = await fetchWeiboTimeline(job.ref)
-      return weiboTimelineToFeed(job.ref, screenName, mblogs, RSS_ENTRY_LIMIT)
+      const expanded = await expandWeiboMblogs(mblogs, job.ref, RSS_ENTRY_LIMIT)
+      return weiboTimelineToFeed(job.ref, screenName, expanded, RSS_ENTRY_LIMIT)
     } catch (error: unknown) {
       if (error instanceof WeiboRateLimited) throw error
       return null
@@ -2019,6 +2024,96 @@ async function fetchWeiboTimeline(uid: string): Promise<{ mblogs: any[]; screenN
   return { mblogs, screenName }
 }
 
+function isWeiboTextTruncated(text: string, blog: any): boolean {
+  if (blog?.isLongText === true) return true
+  const plain = stripHtml(text || "")
+  return /(?:…|\.{2,3})全文\s*$|展开全文/u.test(plain)
+}
+
+async function weiboDetailApi(path: string, blogId: string, cookie: string): Promise<any> {
+  const url = `https://m.weibo.cn/${path}?id=${encodeURIComponent(blogId)}`
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "FinHot/0.1.4 (RSS Reader)",
+      Cookie: cookie,
+      Referer: `https://m.weibo.cn/detail/${blogId}`,
+      "X-Requested-With": "XMLHttpRequest",
+    },
+    signal: AbortSignal.timeout(WATCHLIST_FETCH_TIMEOUT_MS),
+  })
+  return res.json()
+}
+
+async function fetchWeiboFullText(blogId: string, cookie: string): Promise<string | null> {
+  const extend = await weiboDetailApi("statuses/extend", blogId, cookie)
+  if (extend.ok === -100) {
+    throw new WeiboRateLimited("weibo extend ok=-100 (IP 频控，停止长文补全)")
+  }
+  if (extend.ok === 1) {
+    const raw = extend.data?.longTextContent ?? extend.data?.content
+    if (raw) return stripHtmlNL(String(raw))
+  }
+
+  const show = await weiboDetailApi("statuses/show", blogId, cookie)
+  if (show.ok === -100) {
+    throw new WeiboRateLimited("weibo show ok=-100 (IP 频控，停止长文补全)")
+  }
+  if (show.ok === 1) {
+    const mblog = show.data ?? {}
+    const raw =
+      mblog.longText?.longTextContent ??
+      mblog.longTextContent ??
+      (mblog.isLongText ? null : mblog.text)
+    if (raw) return stripHtmlNL(String(raw))
+  }
+  return null
+}
+
+async function expandWeiboMblogs(mblogs: any[], uid: string, limit: number): Promise<any[]> {
+  if (mblogs.length === 0) return mblogs
+
+  const updated = new Map<string, any>()
+  let cookie = await weiboGuestCookieValue()
+  let cookieRenewed = false
+  let expanded = 0
+
+  for (const blog of mblogs.slice(0, limit)) {
+    const id = String(blog.id ?? "")
+    if (!id || !isWeiboTextTruncated(blog.text ?? "", blog)) continue
+    if (expanded >= WEIBO_DETAIL_MAX_PER_UID) break
+
+    try {
+      let full = await fetchWeiboFullText(id, cookie)
+      if (!full && !cookieRenewed) {
+        cookie = await renewWeiboGuestCookie()
+        cookieRenewed = true
+        full = await fetchWeiboFullText(id, cookie)
+      }
+      if (full) {
+        updated.set(id, { ...blog, text: full, isLongText: false })
+        expanded++
+      }
+    } catch (error: unknown) {
+      if (error instanceof WeiboRateLimited) {
+        console.warn(`[FinHot] ${error.message} (uid ${uid})`)
+        break
+      }
+      const message = error instanceof Error ? error.message : String(error)
+      console.warn(`[FinHot] weibo full text ${id} failed: ${message}`)
+    }
+
+    if (WEIBO_DETAIL_SLEEP_MS > 0) {
+      await new Promise((resolve) => setTimeout(resolve, WEIBO_DETAIL_SLEEP_MS))
+    }
+  }
+
+  if (updated.size > 0) {
+    console.info(`[FinHot] weibo ${uid}: expanded ${updated.size} long posts`)
+  }
+  if (updated.size === 0) return mblogs
+  return mblogs.map((blog) => updated.get(String(blog.id ?? "")) ?? blog)
+}
+
 function weiboTimelineToFeed(uid: string, screenName: string, mblogs: any[], limit: number) {
   const feedUrl = `finhot://weibo/${uid}`
   const feedId = generateId(feedUrl)
@@ -3577,7 +3672,26 @@ export function rssProxyPlugin(): PluginOption {
         }
       }
       server.middlewares.use("/api/public/refresh", handleRefreshWatchlist)
-      server.middlewares.use("/api/public/refresh-weibo", handleRefreshWatchlist)
+      server.middlewares.use("/api/public/refresh-weibo", async (req, res) => {
+        if (handleCors(req, res)) return
+        if (req.method !== "POST") {
+          res.writeHead(405, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: "Method not allowed" }))
+          return
+        }
+        try {
+          const imported = await autoImportWatchlistFeeds(["微博"])
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(JSON.stringify({ ok: true, imported, category: "微博" }))
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : "Weibo refresh failed"
+          res.writeHead(502, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ error: message }))
+        }
+      })
 
       // ─── Grok native X support (replaces/supplements fragile local RSSHub for X) ───
       // The agent (Grok) uses its built-in x_keyword_search / x_semantic_search tools
