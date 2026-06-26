@@ -3,7 +3,7 @@
   "type": "module",
   "private": true,
   "packageManager": "pnpm@10.17.0",
-  "description": "金融热词雷达 - 本地优先的金融信息监控平台",
+  "description": "金融信息流阅读器 - 本地优先的金融 RSS / 信息流阅读器",
   "author": "FinHot",
   "license": "AGPL-3.0-only",
   "homepage": "https://github.com/linxiaoqi5111-del/finhot",
