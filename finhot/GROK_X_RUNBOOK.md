@@ -47,12 +47,23 @@ POST http://localhost:2233/api/public/refresh-x-grok   (导入中央缓存)
 
 | 字段      | 必填 | 说明                                                                                       |
 | --------- | ---- | ------------------------------------------------------------------------------------------ |
-| `id`      | ✅   | 全局唯一 id，去重用。建议 `x-<screen>-<tweetId>`                                           |
+| `id`      | ✅   | 全局唯一 id，去重用。**必须**用真实推文 id：`x-<screen>-<tweetId>`，**禁止** `demo*` 占位  |
 | `source`  | ✅   | 作者展示名，**必须** `X@<screen>` 形式，screen 会被解析为 feed 与 `https://x.com/<screen>` |
-| `content` | ✅   | 正文全文                                                                                   |
-| `url`     | ✅   | 原推链接                                                                                   |
-| `ts`      | ✅   | 发布时间，**unix 秒**                                                                      |
-| `title`   | ❌   | 可省略 / null                                                                              |
+| `content` | ✅   | 正文全文，**译成简体中文**（见下方翻译要求）                                               |
+| `url`     | ✅   | 原推链接（真实 `https://x.com/<screen>/status/<tweetId>`，**禁止** demo 链接）             |
+| `ts`      | ✅   | 发布时间，**unix 秒**（推文真实发布时间，不要用当前时间批量填同一值）                      |
+| `title`   | ❌   | 可省略 / null；若填则同样用中文                                                            |
+
+### 翻译要求（重要）
+
+抓到的 X post 多为英文。**写入前请把 `content`（以及 `title` 若有）忠实翻译成简体中文**：
+
+- 忠实、通顺、不增删信息，不做总结或评论。
+- 保留专有名词、公司名、人名、股票代码/cashtag（如 `$NVDA`）、产品名；不确定时保留英文原文。
+- 已是中文的内容原样保留，不要重复翻译。
+- 译文直接写进 `content`（不要保留英文原文 + 译文两份）。
+
+> 兜底：即便这里没翻，服务端富集流程也会用 LLM key 对非中文条目补译（写入 `en.translation`）。但首选由 Grok 在抓取时直接译好，质量与时效更优。
 
 注意：
 
@@ -75,8 +86,9 @@ POST http://localhost:2233/api/public/refresh-x-grok   (导入中央缓存)
 
 1. 对名单里每个 screen 用 `x_keyword_search(from:<screen>, mode=Latest, since=<上次时间>)`
    （必要时 `x_semantic_search` / thread 补全）拉最近的 post。
-2. 规范化成 `GrokXPost`，合并/去重后**覆盖写** `x_grok_entries.json`。
-3. `curl -X POST http://localhost:2233/api/public/refresh-x-grok`
+2. 把每条 post 的正文（及标题）**翻译成简体中文**（见第 2 节「翻译要求」）。
+3. 规范化成 `GrokXPost`（用真实 tweetId / url / ts，禁止 demo 占位），合并/去重后**覆盖写** `x_grok_entries.json`。
+4. `curl -X POST http://localhost:2233/api/public/refresh-x-grok`
    返回 `{"ok":true,"imported":N}`。
 
 ---
