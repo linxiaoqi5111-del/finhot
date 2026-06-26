@@ -4006,8 +4006,11 @@ function renderEntryInsight(e,en,f){
 }
 function platform(feed){var u=(feed&&feed.url||"").toLowerCase();var c=(feed&&feed.category||"").toLowerCase();if(u.indexOf(":8090")>=0||u.indexOf("wechat")>=0||u.indexOf("mp.weixin")>=0||c.indexOf("公众号")>=0)return"wechat";if(u.indexOf("xueqiu")>=0||c.indexOf("雪球")>=0)return"xueqiu";if(u.indexOf("twitter")>=0||u.indexOf("x.com")>=0||u.indexOf("nitter")>=0||u.indexOf("xcancel")>=0||c.indexOf("推特")>=0)return"twitter";if(u.indexOf("weibo")>=0||c.indexOf("微博")>=0)return"weibo";return"other"}
 function platformLabel(p){return p==="xueqiu"?"雪球":p==="twitter"?"推特":p==="weibo"?"微博":p==="wechat"?"公众号":"RSS"}
-var SCORE_GATE=55;
-function passesScoreGate(e){var p=platform(feedMap[e.feedId]);if(p==="wechat")return true;var v=scoreVal(enrichments[e.id]);return v!=null&&v>=SCORE_GATE}
+var SCORE_GATE=25;
+// Primary subscribed accounts (wechat/xueqiu/twitter/weibo) are already curated
+// server-side (recency + score gate + per-feed cap), so the client shows them all.
+// Only generic discovery RSS still needs the in-page score gate.
+function passesScoreGate(e){var p=platform(feedMap[e.feedId]);if(p!=="other")return true;var v=scoreVal(enrichments[e.id]);return v!=null&&v>=SCORE_GATE}
 function visibleByCat(e){if(activeCat==="all")return true;return platform(feedMap[e.feedId])===activeCat}
 function isToday(e){var d=new Date(e.publishedAt);var n=new Date();return d.toDateString()===n.toDateString()}
 function countForFeed(id){return (entriesByFeed[id]||[]).length}
@@ -4021,7 +4024,7 @@ else activeView="smart-unread";
 
 function renderSmartNav(){
   var todayCount=allEntries.filter(function(e){return isToday(e)&&passesScoreGate(e)}).length;
-  var selectedCount=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"||platform(feedMap[e.feedId])==="wechat"}).length;
+  var selectedCount=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"||platform(feedMap[e.feedId])!=="other"}).length;
   var items=[
     {id:"smart-selected",label:"\u7CBE\u9009",count:selectedCount,ico:"star"},
     {id:"smart-today",label:"\u4ECA\u5929",count:todayCount,ico:"today"},
@@ -4043,7 +4046,7 @@ function renderTabs(){
 function selectedEntries(){
   var list=[];
   if(activeCat!=="all"){list=allEntries.slice();if(activeCat!=="wechat")list=list.filter(passesScoreGate)}
-  else if(activeView==="smart-selected")list=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"||platform(feedMap[e.feedId])==="wechat"});
+  else if(activeView==="smart-selected")list=allEntries.filter(function(e){return selStatus(enrichments[e.id])==="selected"||platform(feedMap[e.feedId])!=="other"});
   else if(activeView==="smart-today")list=allEntries.filter(function(e){return isToday(e)&&passesScoreGate(e)});
   else list=allEntries.filter(passesScoreGate);
   return list.filter(visibleByCat).sort(function(a,b){return new Date(b.publishedAt).getTime()-new Date(a.publishedAt).getTime()});
