@@ -3951,6 +3951,7 @@ a{color:inherit;text-decoration:none}.app{display:flex;height:100vh;overflow:hid
 .fp-source{display:flex;align-items:center;gap:8px;margin-bottom:12px}.fp-source-icon{width:24px;height:24px;border-radius:8px;background:rgba(var(--color-fillSecondary));display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:rgba(var(--color-textTertiary));overflow:hidden}.fp-source-icon img{width:100%;height:100%;object-fit:cover}.fp-source-name{font-size:14px;font-weight:650;color:rgba(var(--color-text))}.fp-source-plat{font-size:12px;color:rgba(var(--color-textTertiary));padding:2px 8px;border-radius:4px;background:rgba(var(--color-fillSecondary))}
 .fp-badges{display:flex;gap:6px;margin-bottom:14px}
 .fp-title{font-size:24px;font-weight:780;line-height:1.34;color:rgba(var(--color-text));letter-spacing:-.02em;word-break:break-word;margin-bottom:10px}
+.fp-title.long{font-size:18px;font-weight:680;line-height:1.5;letter-spacing:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .fp-date{font-size:13px;color:rgba(var(--color-textTertiary));margin-bottom:24px;display:flex;align-items:center;gap:6px}
 .fp-date svg{width:14px;height:14px;opacity:.5}
 .fp-section{margin-top:24px;border-radius:12px;border:1px solid rgba(var(--color-fillTertiary));overflow:hidden}
@@ -4161,7 +4162,8 @@ function showFullDetail(entryId){
   h+='<div class="fp-inner">';
   h+='<div class="fp-source"><span class="fp-source-icon">'+(f.image?'<img src="'+esc(f.image)+'" alt="">':esc(initial(f.title||f.url)))+'</span><span class="fp-source-name">'+esc(f.title||f.url||"")+'</span><span class="fp-source-plat">'+esc(pLabel)+'</span><button class="fp-fav-btn '+(isFav(e.feedId)?"on":"")+'" data-fav-toggle="'+esc(e.feedId)+'">'+(isFav(e.feedId)?"\u5DF2\u81EA\u9009 \u2605":"\u52A0\u5165\u81EA\u9009 \u2606")+'</button></div>';
   if(sl||score!=null){h+='<div class="fp-badges">';if(sl)h+='<span class="q q-'+scoreTier(score||0)+'">'+esc(sl)+'</span>';if(score!=null)h+='<span class="q q-'+scoreTier(score)+'">'+score+'</span>';h+='</div>'}
-  h+='<h1 class="fp-title">'+esc(titleText)+'</h1>';
+  var isLongTitle=plain(titleText).length>90;
+  h+='<h1 class="fp-title'+(isLongTitle?" long":"")+'">'+esc(titleText)+'</h1>';
   h+='<div class="fp-date"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>'+esc(dateStr)+(dateStr?" \u00B7 ":"")+esc(when(e.publishedAt))+'</div>';
   if(reason){h+='<div class="fp-reason"><div class="fp-reason-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3.1 6.3 6.9 1-5 4.9 1.2 6.8L12 17.7 5.8 21 7 14.2 2 9.3l6.9-1z"/></svg>\u7CBE\u9009\u7406\u7531</div><div class="fp-reason-body">'+textHtml(reason)+'</div></div>'}
   if(summary){h+='<div class="fp-section"><div class="fp-section-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a4 4 0 0 0-4 4v2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10a2 2 0 0 0-2-2h-2V6a4 4 0 0 0-4-4z"/></svg>AI \u6458\u8981</div><div class="fp-section-body">'+articleHtml(summary,en.tags||[])+'</div></div>'}
