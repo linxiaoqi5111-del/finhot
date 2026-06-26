@@ -1,9 +1,0 @@
-{
-  "weights": { "infl": 0.3, "rel": 0.35, "fresh": 0.2, "dup": 0.15 },
-  "threshold": 0.45,
-  "fresh_tau_hours": 48,
-  "future_skew_hours": 2,
-  "dedup": { "window_hours": 72, "jaccard": 0.5 },
-  "baseline_days": 7,
-  "trust_ts": {}
-}
