@@ -5,9 +5,9 @@
   "private": true,
   "description": "金融热词雷达 - 本地优先的金融信息监控平台",
   "author": "FinHot",
-  "homepage": "https://github.com/linxiaoqi5111-del/khazix-skills",
+  "homepage": "https://github.com/linxiaoqi5111-del/finhot",
   "repository": {
-    "url": "https://github.com/linxiaoqi5111-del/khazix-skills",
+    "url": "https://github.com/linxiaoqi5111-del/finhot",
     "type": "git"
   },
   "main": "./dist/main/index.js",

@@ -201,7 +201,7 @@ export const registerAppMenu = () => {
           click: () => {
             WindowManager.createWindow({
               extraPath: `#add?url=${encodeURIComponent(
-                "https://github.com/linxiaoqi5111-del/khazix-skills/releases.atom",
+                "https://github.com/linxiaoqi5111-del/finhot/releases.atom",
               )}`,
               width: 800,
               height: 600,

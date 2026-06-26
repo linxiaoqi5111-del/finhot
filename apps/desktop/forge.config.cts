@@ -256,7 +256,7 @@ const config: ForgeConfig = {
             name: "FinHot",
             setupIcon: isStaging ? "resources/icon-staging.ico" : "resources/icon.ico",
             iconUrl:
-              "https://github.com/linxiaoqi5111-del/khazix-skills/raw/main/apps/desktop/resources/icon.ico",
+              "https://github.com/linxiaoqi5111-del/finhot/raw/main/apps/desktop/resources/icon.ico",
           }),
         ]),
   ],

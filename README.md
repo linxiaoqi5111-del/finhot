@@ -1,4 +1,7 @@
 <div align="center">
+
+**中文** · [English](./README.en.md)
+
   <h1>🔥 FinHot · 金融热词雷达</h1>
   <p><strong>本地优先的金融信息监控平台</strong></p>
   <p>监控财经快讯中的突发热词，量化热度与炒作浓度</p>

@@ -149,7 +149,7 @@ export const SettingAbout = () => {
                     OpenIssueLink: (
                       <a
                         className="text-accent hover:underline"
-                        href="https://github.com/linxiaoqi5111-del/khazix-skills"
+                        href="https://github.com/linxiaoqi5111-del/finhot"
                         target="_blank"
                         rel="noreferrer"
                       >
