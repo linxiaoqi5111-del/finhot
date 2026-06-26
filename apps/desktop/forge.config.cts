@@ -240,7 +240,7 @@ const config: ForgeConfig = {
       ? [
           new MakerAppX({
             publisher: "CN=7CBBEB6A-9B0E-4387-BAE3-576D0ACA279E",
-            packageDisplayName: "FinHot - 金融热词雷达",
+            packageDisplayName: "FinHot - 金融信息流阅读器",
             devCert: "build/dev.pfx",
             assets: "static/appx",
             manifest: "build/appxmanifest.xml",

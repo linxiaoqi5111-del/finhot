@@ -6,7 +6,7 @@ import focalLogoUrl from "~/assets/focal-logo.png"
 // eslint-disable-next-line react-refresh/only-export-components
 export const FOCAL_PRODUCT_NAME = "FinHot"
 // eslint-disable-next-line react-refresh/only-export-components
-export const FOCAL_TAGLINE = "金融热词雷达"
+export const FOCAL_TAGLINE = "金融信息流阅读器"
 
 export const FocalLogo = ({
   ref,

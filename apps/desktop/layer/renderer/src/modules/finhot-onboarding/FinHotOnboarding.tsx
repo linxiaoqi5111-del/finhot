@@ -84,7 +84,7 @@ export function FinHotOnboarding({ onClose }: { onClose: () => void }) {
         <img src={focalLogoUrl} alt="FinHot" className="size-12 rounded-xl" />
         <div>
           <h1 className="text-xl font-bold text-text">欢迎使用 FinHot</h1>
-          <p className="text-sm text-text-secondary">选择你感兴趣的金融信息源，开始监控热词</p>
+          <p className="text-sm text-text-secondary">选择你感兴趣的金融信息源，开始阅读</p>
         </div>
         <div className="ml-auto text-sm text-text-tertiary">
           已选 {selectedCount} / {feeds.length} 源
