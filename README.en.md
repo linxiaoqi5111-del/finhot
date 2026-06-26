@@ -2,40 +2,39 @@
 
 [中文](./README.md) · **English**
 
-<h1>🔥 FinHot · Financial Hot-Word Radar</h1>
-  <p><strong>A local-first financial information monitoring platform</strong></p>
-  <p>Track sudden hot words in financial news flashes, quantify heat and speculation intensity</p>
+<h1>📰 FinHot · Financial Feed Reader</h1>
+  <p><strong>A local-first financial RSS reader</strong></p>
+  <p>Aggregates financial RSS, Weibo, Xueqiu and X; auto scoring, summaries and Chinese translation for focused reading</p>
 </div>
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="license"/>
   <img src="https://img.shields.io/badge/based_on-Focal_(Folo_fork)-orange" alt="base"/>
-  <img src="https://img.shields.io/badge/status-Phase_0-green" alt="status"/>
 </p>
 
 ---
 
 ## What it is
 
-FinHot is built on [Focal](https://github.com/nextcaicai/Focal) (a fork of [Folo/RSSNext](https://github.com/RSSNext/Folo)), reusing its mature RSS subscription engine, local SQLite database, BYOK AI enrichment framework, and Electron desktop shell, and focusing on the **financial hot-word monitoring** scenario:
+FinHot is built on [Focal](https://github.com/nextcaicai/Focal) (a fork of [Folo/RSSNext](https://github.com/RSSNext/Folo)), reusing its mature RSS subscription engine, local SQLite database, BYOK AI enrichment framework, and Electron desktop shell. It is a **financial feed reader**:
 
-- 📡 **Multi-source ingestion** — RSS financial flashes + Weibo/Xueqiu watchlists
-- 🔥 **Hot-word engine** — tokenization + n-gram + burst detection + heat scoring
-- 📊 **A-share speculation intensity** — automatically flags hot words carrying speculation signals
-- 📰 **Financial brief** — AI-generated daily picks
-- 🖥️ **Desktop app** — macOS/Windows/Linux, local-first
+- 📡 **Multi-source aggregation** — RSS financial sources + custom Weibo / Xueqiu / WeChat / X watchlists
+- ⭐ **Quality scoring** — server-side enrichment scores and ranks entries, filtering low-signal noise
+- 📝 **AI summaries** — auto-generates Chinese summaries per entry (BYOK, using your own LLM key)
+- 🌐 **AI translation** — auto-translates titles and bodies of English/foreign entries into Chinese
+- 🖥️ **Desktop + Web** — macOS/Windows/Linux desktop app, also deployable as a public site, local-first
 
 ## Architecture
 
 ```
 Electron (desktop shell)
 ├── Renderer (Vite + React)
-│   ├── Hot-word dashboard (trend charts / burst words / speculation intensity)
-│   ├── RSS timeline (Smart Feeds: regulation / product / industry / research / opinion)
-│   └── AI brief panel
+│   ├── RSS timeline (Smart Feeds)
+│   ├── Entry detail (original / AI summary / AI translation)
+│   └── Subscription & group management
 ├── Main Process
 │   ├── Scheduled RSS ingestion
-│   ├── Hot-word analysis engine
+│   ├── Server-side enrichment (scoring / summary / translation)
 │   └── Local SQLite (Drizzle ORM)
 └── Shared Packages
     ├── @follow/components (UI component library)
@@ -59,19 +58,10 @@ cd apps/desktop && pnpm run dev:electron
 pnpm run build:web
 ```
 
-## Roadmap
-
-- [x] Phase 0: Focal base + branding customization
-- [ ] Phase 1: Preset financial RSS sources
-- [ ] Phase 2: Hot-word analysis engine (TypeScript)
-- [ ] Phase 3: Financial dashboard UI
-- [ ] Phase 4: AI brief + recommendation ranking
-
 ## Acknowledgements
 
 - [Focal](https://github.com/nextcaicai/Focal) — local-first RSS reader
 - [Folo (RSSNext)](https://github.com/RSSNext/Folo) — upstream RSS platform
-- [finhot (zycyyyya)](https://github.com/zycyyyya/finhot) — financial hot-word Agent Skill inspiration
 
 ## License
 
