@@ -634,11 +634,37 @@ function isLikelyChinese(text: string): boolean {
   return cjk / (cjk + latin) >= 0.2
 }
 
+/**
+ * Whether text carries actual prose worth translating. Link-only posts (a bare
+ * URL, or just @mentions / #tags after the link is stripped) have no real words,
+ * and feeding them to the model tends to produce a refusal like
+ * "抱歉，我无法访问外部链接……" instead of a translation, so we skip them.
+ */
+function hasTranslatableProse(text: string): boolean {
+  const stripped = text.replaceAll(/https?:\/\/\S+/gi, " ").replaceAll(/\bwww\.\S+/gi, " ")
+  const letters = (stripped.match(/[A-Z\u4e00-\u9fff]/gi) ?? []).length
+  return letters >= 2
+}
+
+/**
+ * Detect a model refusal masquerading as a translation, e.g.
+ * "抱歉，我无法访问外部链接……" / "I'm unable to access the URL……". These show up
+ * when a link-only post slips through and must never be stored as a translation.
+ */
+function isRefusalTranslation(text: string): boolean {
+  const t = text.trim()
+  if (!t) return false
+  return /抱歉|无法访问|无法翻译|无法提供|请提供|请直接提供|cannot (?:access|translate|provide)|unable to (?:access|translate|provide)|i'?m sorry/i.test(
+    t,
+  )
+}
+
 /** Whether an entry still needs a Chinese translation written to en.translation. */
 function needsForeignTranslation(entry: CachedEntry, en: CachedEnrichment | undefined): boolean {
   if (en?.translation?.content || en?.translation?.readabilityContent) return false
   const text = `${entry.title ?? ""}\n${stripHtmlToText(entry.content || entry.description || "")}`
   if (!text.trim()) return false
+  if (!hasTranslatableProse(text)) return false
   return !isLikelyChinese(text)
 }
 
@@ -654,6 +680,7 @@ async function generateTranslation(
   body: string,
 ): Promise<{ title: string | null; content: string | null } | null> {
   if (!title.trim() && !body.trim()) return null
+  if (!hasTranslatableProse(`${title}\n${body}`)) return null
   try {
     const res = await fetch(apiURL, {
       method: "POST",
@@ -683,6 +710,7 @@ async function generateTranslation(
     const trTitle = typeof parsed.title === "string" ? parsed.title.trim() : ""
     const trContent = typeof parsed.content === "string" ? parsed.content.trim() : ""
     if (!trTitle && !trContent) return null
+    if (isRefusalTranslation(trTitle) || isRefusalTranslation(trContent)) return null
     return { title: trTitle || null, content: trContent || null }
   } catch {
     return null
