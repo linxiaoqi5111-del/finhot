@@ -59,6 +59,10 @@ const EMBEDDING_MODEL = process.env.FINHOT_EMBEDDING_MODEL || "bge-m3"
 const FEED_SUGGESTION_SERVERCHAN = (process.env.FEED_SUGGESTION_SERVERCHAN || "").trim()
 // Token gating the read-only GET /api/public/feed-suggestions endpoint. Empty = endpoint disabled.
 const FEED_SUGGESTION_TOKEN = (process.env.FEED_SUGGESTION_TOKEN || "").trim()
+// Absolute origin the deployed public page should POST feed suggestions to (e.g.
+// a tunnel that reaches this dev server). Empty = same-origin, used in dev or
+// when the dev server serves the page directly.
+const FEED_SUGGESTION_PUBLIC_API_BASE = (process.env.FEED_SUGGESTION_PUBLIC_API_BASE || "").trim()
 
 const DETAIL_ALLOWED_TAGS = new Set([
   "a",
@@ -3137,7 +3141,10 @@ export function rssProxyPlugin(): PluginOption {
           list.push(suggestion)
           writeFileSync(file, JSON.stringify(list, null, 2))
           void pushFeedSuggestionServerChan(suggestion)
-          res.writeHead(200, { "Content-Type": "application/json" })
+          res.writeHead(200, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
           res.end(JSON.stringify({ ok: true }))
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : "Unknown error"
@@ -3155,14 +3162,20 @@ export function rssProxyPlugin(): PluginOption {
           return
         }
         if (!FEED_SUGGESTION_TOKEN) {
-          res.writeHead(404, { "Content-Type": "application/json" })
+          res.writeHead(404, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
           res.end(JSON.stringify({ error: "Not found" }))
           return
         }
         const parsedUrl = new URL(req.url ?? "/", "http://localhost")
         const token = parsedUrl.searchParams.get("token") ?? ""
         if (token !== FEED_SUGGESTION_TOKEN) {
-          res.writeHead(401, { "Content-Type": "application/json" })
+          res.writeHead(401, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
           res.end(JSON.stringify({ error: "Unauthorized" }))
           return
         }
@@ -3178,6 +3191,7 @@ export function rssProxyPlugin(): PluginOption {
           res.writeHead(200, {
             "Content-Type": "application/json",
             "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*",
           })
           res.end(JSON.stringify({ count: suggestions.length, suggestions }))
         } catch (error: unknown) {
@@ -4701,7 +4715,7 @@ function submitFeedSuggestion(){
     platform:(((document.getElementById("fp-fs-platform")||{}).value)||"").trim()
   };
   btn.disabled=true;msg.className="fp-form-msg";msg.textContent="\u63D0\u4EA4\u4E2D\u2026";
-  fetch("/api/public/feed-suggestion",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
+  fetch(${JSON.stringify(FEED_SUGGESTION_PUBLIC_API_BASE)}+"/api/public/feed-suggestion",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)})
     .then(function(r){if(!r.ok)throw new Error("bad status");return r.json()})
     .then(function(){msg.className="fp-form-msg ok";msg.textContent="\u6536\u5230\uFF0C\u8C22\u8C22\u4F60\u7684\u6295\u7A3F\uFF01\u6211\u4EEC\u4F1A\u5C3D\u5FEB\u5BA1\u6838\u3002";if(idEl)idEl.value=""})
     .catch(function(){
