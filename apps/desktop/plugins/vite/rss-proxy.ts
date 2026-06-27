@@ -3834,12 +3834,18 @@ export function rssProxyPlugin(): PluginOption {
           .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
           .slice(0, 500)
 
-        // Strip embeddings from enrichments to reduce page size
-        const enrichmentsForPage: Record<string, any> = {}
-        for (const [id, en] of Object.entries(enrichments)) {
-          const { embedding, ...rest } = en as any
-          enrichmentsForPage[id] = rest
-          if (embedding) enrichmentsForPage[id].embedding = embedding
+        // Only embed enrichments for entries actually shown on the page.
+        // Embeddings (used by the client-side hotspot radar clustering) are
+        // large, so including them for every scored item bloats the page past
+        // Cloudflare Pages' 25 MiB/file limit. Scope to displayed entries only.
+        const displayedIds = new Set<string>()
+        for (const list of Object.values(entriesByFeed)) {
+          for (const e of list) displayedIds.add(e.id)
+        }
+        const enrichmentsForPage: Record<string, (typeof enrichments)[string]> = {}
+        for (const id of displayedIds) {
+          const en = enrichments[id]
+          if (en) enrichmentsForPage[id] = en
         }
         const html = buildPublicPageHtmlLocalStyle(
           JSON.stringify(feeds),
