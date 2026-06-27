@@ -125,6 +125,9 @@ export const defaultIntegrationSettings: IntegrationSettings = {
   // obsidian
   enableObsidian: false,
   obsidianVaultPath: "",
+  obsidianEndpoint: "https://127.0.0.1:27124",
+  obsidianToken: "",
+  obsidianFolder: "",
 
   // outline
   enableOutline: false,

@@ -127,6 +127,10 @@ export interface IntegrationSettings {
   // obsidian
   enableObsidian: boolean
   obsidianVaultPath: string
+  // obsidian web (Local REST API plugin)
+  obsidianEndpoint: string
+  obsidianToken: string
+  obsidianFolder: string
 
   // outline
   enableOutline: boolean

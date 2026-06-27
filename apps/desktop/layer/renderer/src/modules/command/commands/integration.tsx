@@ -9,6 +9,7 @@ import {
   SimpleIconsZotero,
 } from "@follow/components/ui/platform-icon/icons.js"
 import { IN_ELECTRON } from "@follow/shared/constants"
+import { buildObsidianNote } from "@follow/shared/obsidian"
 import { getEntry } from "@follow/store/entry/getter"
 import type { EntryModel } from "@follow/store/entry/types"
 import { getFeedById } from "@follow/store/feed/getter"
@@ -281,7 +282,15 @@ const useRegisterObsidianCommands = () => {
 
   const enableObsidian = useIntegrationSettingKey("enableObsidian")
   const obsidianVaultPath = useIntegrationSettingKey("obsidianVaultPath")
-  const isObsidianAvailable = enableObsidian && !!obsidianVaultPath
+  const obsidianEndpoint = useIntegrationSettingKey("obsidianEndpoint")
+  const obsidianToken = useIntegrationSettingKey("obsidianToken")
+  const obsidianFolder = useIntegrationSettingKey("obsidianFolder")
+
+  // Electron writes the note directly to the vault on disk; the web app pushes
+  // it through the Obsidian Local REST API plugin (https://127.0.0.1:27124).
+  const desktopAvailable = IN_ELECTRON && enableObsidian && !!obsidianVaultPath
+  const webAvailable = !IN_ELECTRON && enableObsidian && !!obsidianEndpoint && !!obsidianToken
+  const isObsidianAvailable = desktopAvailable || webAvailable
 
   const saveToObsidian = useMutation({
     mutationKey: ["save-to-obsidian"],
@@ -296,7 +305,38 @@ const useRegisterObsidianCommands = () => {
       feedTitle?: string
       feedUrl?: string
     }) => {
-      return await ipcServices?.integration.saveToObsidian(data)
+      if (IN_ELECTRON) {
+        return await ipcServices?.integration.saveToObsidian(data)
+      }
+
+      const { fileName, markdown } = buildObsidianNote({
+        url: data.url,
+        title: data.title,
+        content: data.content,
+        author: data.author,
+        publishedAt: data.publishedAt,
+        description: data.description,
+        tags: ["folo"],
+        feedTitle: data.feedTitle,
+        feedUrl: data.feedUrl,
+      })
+      const base = obsidianEndpoint.replace(/\/$/, "")
+      const folder = obsidianFolder.replaceAll(/^\/+|\/+$/g, "")
+      const notePath = folder ? `${folder}/${fileName}` : fileName
+      const encodedPath = notePath.split("/").map(encodeURIComponent).join("/")
+      try {
+        await ofetch(`${base}/vault/${encodedPath}`, {
+          method: "PUT",
+          headers: {
+            Authorization: `Bearer ${obsidianToken}`,
+            "Content-Type": "text/markdown",
+          },
+          body: markdown,
+        })
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: (error as FetchError)?.message || String(error) }
+      }
     },
     onSuccess: (data) => {
       if (data?.success) {
@@ -312,7 +352,7 @@ const useRegisterObsidianCommands = () => {
   })
 
   useRegisterCommandEffect(
-    !IN_ELECTRON || !isObsidianAvailable
+    !isObsidianAvailable
       ? []
       : defineFollowCommand({
           id: COMMAND_ID.integration.saveToObsidian,
@@ -350,7 +390,13 @@ const useRegisterObsidianCommands = () => {
           },
         }),
     {
-      deps: [isObsidianAvailable, obsidianVaultPath],
+      deps: [
+        isObsidianAvailable,
+        obsidianVaultPath,
+        obsidianEndpoint,
+        obsidianToken,
+        obsidianFolder,
+      ],
     },
   )
 }
