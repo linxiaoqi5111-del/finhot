@@ -151,13 +151,34 @@ export const SettingIntegration = () => {
           title: t("integration.obsidian.title"),
           icon: <SimpleIconsObsidian />,
           enabled: settings.enableObsidian,
-          configured: Boolean(settings.obsidianVaultPath),
+          configured: IN_ELECTRON
+            ? Boolean(settings.obsidianVaultPath)
+            : Boolean(settings.obsidianEndpoint && settings.obsidianToken),
           settings: [
             defineSettingItem("enableObsidian", {
               label: t("integration.obsidian.enable.label"),
               description: t("integration.obsidian.enable.description"),
             }),
-            ObsidianVaultPathPicker,
+            ...(IN_ELECTRON
+              ? [ObsidianVaultPathPicker]
+              : [
+                  defineSettingItem("obsidianEndpoint", {
+                    label: t("integration.obsidian.endpoint.label"),
+                    vertical: true,
+                    description: t("integration.obsidian.endpoint.description"),
+                  }),
+                  defineSettingItem("obsidianToken", {
+                    label: t("integration.obsidian.token.label"),
+                    vertical: true,
+                    type: "password",
+                    description: t("integration.obsidian.token.description"),
+                  }),
+                  defineSettingItem("obsidianFolder", {
+                    label: t("integration.obsidian.folder.label"),
+                    vertical: true,
+                    description: t("integration.obsidian.folder.description"),
+                  }),
+                ]),
           ],
         },
         {

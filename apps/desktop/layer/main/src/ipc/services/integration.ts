@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs"
 import fsp from "node:fs/promises"
 
+import { buildObsidianNote } from "@follow/shared/obsidian"
 import { shell } from "electron"
 import type { IpcContext } from "electron-ipc-decorator"
 import { IpcMethod, IpcService } from "electron-ipc-decorator"
@@ -8,23 +9,6 @@ import path from "pathe"
 
 import { store } from "~/lib/store"
 import { logger } from "~/logger"
-
-import { createObsidianFrontmatter } from "./obsidian-frontmatter"
-
-// Taken from https://github.com/rollup/rollup/blob/4f69d33af3b2ec9320c43c9e6c65ea23a02bdde3/src/utils/sanitizeFileName.ts
-// https://datatracker.ietf.org/doc/html/rfc2396
-// eslint-disable-next-line no-control-regex
-const INVALID_CHAR_REGEX = /[\u0000-\u001F"#$%&*+,:;<=>?[\]^`{|}\u007F/\\]/g
-const DRIVE_LETTER_REGEX = /^[a-z]:/i
-
-function sanitizeFileName(name: string): string {
-  const match = DRIVE_LETTER_REGEX.exec(name)
-  const driveLetter = match ? match[0] : ""
-
-  // A `:` is only allowed as part of a windows drive letter (ex: C:\foo)
-  // Otherwise, avoid them because they can refer to NTFS alternate data streams.
-  return driveLetter + name.slice(driveLetter.length).replaceAll(INVALID_CHAR_REGEX, "_")
-}
 
 // Input types
 interface SaveToEagleInput {
@@ -113,19 +97,10 @@ export class IntegrationService extends IpcService {
         feedUrl,
       } = input
 
-      const fileName = `${sanitizeFileName(title || publishedAt)
-        .trim()
-        .slice(0, 80)}.md`
-      const filePath = path.join(vaultPath, fileName)
-      const exists = existsSync(filePath)
-      if (exists) {
-        return { success: false, error: "File already exists" }
-      }
-
-      await fsp.mkdir(path.dirname(filePath), { recursive: true })
-
-      const frontmatter = createObsidianFrontmatter({
+      const { fileName, markdown } = buildObsidianNote({
         url,
+        title,
+        content,
         author,
         publishedAt,
         description,
@@ -133,13 +108,13 @@ export class IntegrationService extends IpcService {
         feedTitle,
         feedUrl,
       })
+      const filePath = path.join(vaultPath, fileName)
+      const exists = existsSync(filePath)
+      if (exists) {
+        return { success: false, error: "File already exists" }
+      }
 
-      const markdown = `${frontmatter}
-
-# ${title}
-
-${content}
-`
+      await fsp.mkdir(path.dirname(filePath), { recursive: true })
 
       await fsp.writeFile(filePath, markdown, "utf-8")
       return { success: true }
