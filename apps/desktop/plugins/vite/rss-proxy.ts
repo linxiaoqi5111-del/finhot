@@ -8,7 +8,7 @@
  * - `/api/public/subscriptions` — Public read-only feed list
  * - `/api/public/entries` — Public read-only entries
  */
-import { execFile } from "node:child_process"
+import { execFile, execFileSync } from "node:child_process"
 import crypto from "node:crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
@@ -26,10 +26,14 @@ const RSS_FETCH_TIMEOUT_MS = 30_000
 const RSS_ENTRY_LIMIT = 30
 // Cloudflare Pages auto-deploy resiliency: a single wrangler upload sometimes
 // times out (ETIMEDOUT) when CF is slow, silently dropping the scheduled deploy.
-// Retry a few times with linear backoff and a longer per-attempt timeout.
-const DEPLOY_MAX_ATTEMPTS = 3
-const DEPLOY_TIMEOUT_MS = 180_000
-const DEPLOY_RETRY_BASE_MS = 5_000
+// Retry several times with exponential backoff and a longer per-attempt timeout.
+const DEPLOY_MAX_ATTEMPTS = 5
+const DEPLOY_TIMEOUT_MS = 300_000
+const DEPLOY_RETRY_BASE_MS = 10_000
+// When every in-line retry still fails (e.g. a longer CF outage), schedule a
+// single delayed background re-deploy so the public site self-heals without
+// waiting for the next scheduled slot, and surface a macOS desktop notification.
+const DEPLOY_FALLBACK_DELAY_MS = 5 * 60 * 1000
 const JINA_READER_BASE = "https://r.jina.ai/"
 const DEFUDDLE_BASE = "https://defuddle.md/"
 const PUBLIC_SITE_BASE =
@@ -3885,7 +3889,7 @@ export function rssProxyPlugin(): PluginOption {
             lastError = error
             if (attempt >= DEPLOY_MAX_ATTEMPTS) break
             const message = error instanceof Error ? error.message : String(error)
-            const delayMs = DEPLOY_RETRY_BASE_MS * attempt
+            const delayMs = DEPLOY_RETRY_BASE_MS * 2 ** (attempt - 1)
             console.warn(
               `[FinHot] wrangler deploy attempt ${attempt}/${DEPLOY_MAX_ATTEMPTS} failed: ${message} — retrying in ${delayMs}ms`,
             )
@@ -3899,20 +3903,79 @@ export function rssProxyPlugin(): PluginOption {
         return urlMatch?.[0] ?? "https://finhot.industry7view.com"
       }
 
+      // Best-effort macOS desktop notification (used to flag a deploy that
+      // failed even after every retry). No-op on non-macOS or when osascript
+      // is unavailable, so it never throws into the scheduler.
+      function notifyDesktop(title: string, message: string): void {
+        if (process.platform !== "darwin") return
+        try {
+          const esc = (s: string) => s.replaceAll(/["\\]/g, "\\$&")
+          execFileSync(
+            "osascript",
+            ["-e", `display notification "${esc(message)}" with title "${esc(title)}"`],
+            { timeout: 10_000 },
+          )
+        } catch {
+          /* notification is best-effort */
+        }
+      }
+
+      // Persist the outcome of the most recent auto-deploy so the external
+      // monitor can read a machine-readable status instead of scraping logs.
+      function writeDeployHealth(status: "ok" | "failed", detail: string): void {
+        try {
+          writeFileSync(
+            join(cacheDir, "deploy-health.json"),
+            JSON.stringify({ status, detail, at: new Date().toISOString() }, null, 2),
+            "utf-8",
+          )
+        } catch {
+          /* health file is best-effort */
+        }
+      }
+
+      // Tracks the pending fallback re-deploy timer so overlapping schedule
+      // ticks don't pile up multiple delayed retries.
+      let fallbackDeployTimer: ReturnType<typeof setTimeout> | null = null
+
       // Auto-deploy to Cloudflare Pages after a scheduled refresh, when CF
       // credentials are present in the environment. No-op (returns false)
       // when credentials are missing, so the scheduler stays self-contained.
-      async function autoDeployIfConfigured(): Promise<boolean> {
+      // On total failure (after all inline retries), emits a macOS notification
+      // and schedules a single delayed background re-deploy so a longer CF
+      // outage self-heals without waiting for the next scheduled slot.
+      async function autoDeployIfConfigured(isFallback = false): Promise<boolean> {
         const cfApiToken = process.env.CF_API_TOKEN
         const cfAccountId = process.env.CF_ACCOUNT_ID
         if (!cfApiToken || !cfAccountId) return false
         try {
           const url = await deployPublicSite(cfApiToken, cfAccountId)
           console.info(`[FinHot] Auto-deployed public site → ${url}`)
+          writeDeployHealth("ok", url)
+          if (fallbackDeployTimer) {
+            clearTimeout(fallbackDeployTimer)
+            fallbackDeployTimer = null
+          }
           return true
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : "Unknown error"
           console.warn(`[FinHot] Auto-deploy failed: ${message}`)
+          writeDeployHealth("failed", message)
+          if (!isFallback && !fallbackDeployTimer) {
+            const minutes = Math.round(DEPLOY_FALLBACK_DELAY_MS / 60_000)
+            notifyDesktop(
+              "FinHot 部署失败",
+              `公网部署失败：${message}。将在 ${minutes} 分钟后自动重试。`,
+            )
+            console.warn(`[FinHot] Scheduling fallback re-deploy in ${minutes}min`)
+            fallbackDeployTimer = setTimeout(() => {
+              fallbackDeployTimer = null
+              void autoDeployIfConfigured(true)
+            }, DEPLOY_FALLBACK_DELAY_MS)
+            if (typeof fallbackDeployTimer.unref === "function") fallbackDeployTimer.unref()
+          } else if (isFallback) {
+            notifyDesktop("FinHot 部署仍失败", `自动重试后公网部署仍失败：${message}。请手动检查。`)
+          }
           return false
         }
       }
