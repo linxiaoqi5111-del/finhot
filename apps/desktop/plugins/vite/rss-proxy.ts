@@ -67,6 +67,48 @@ const FEED_SUGGESTION_TOKEN = (process.env.FEED_SUGGESTION_TOKEN || "").trim()
 // a tunnel that reaches this dev server). Empty = same-origin, used in dev or
 // when the dev server serves the page directly.
 const FEED_SUGGESTION_PUBLIC_API_BASE = (process.env.FEED_SUGGESTION_PUBLIC_API_BASE || "").trim()
+// Per-IP rate limit for feed-suggestion submissions. Defaults: 5 per 10 minutes.
+// Set the max to 0 to disable rate limiting entirely.
+const parsePositiveInt = (value: string | undefined, fallback: number): number => {
+  const n = Number.parseInt((value || "").trim(), 10)
+  return Number.isFinite(n) && n >= 0 ? n : fallback
+}
+const FEED_SUGGESTION_RATE_MAX = parsePositiveInt(process.env.FEED_SUGGESTION_RATE_MAX, 5)
+const FEED_SUGGESTION_RATE_WINDOW_MS = parsePositiveInt(
+  process.env.FEED_SUGGESTION_RATE_WINDOW_MS,
+  10 * 60 * 1000,
+)
+// In-memory sliding window of submission timestamps keyed by client IP.
+const feedSuggestionHits = new Map<string, number[]>()
+
+// Resolve the originating client IP, honouring the tunnel/proxy forwarding
+// headers (cloudflared sets cf-connecting-ip / x-forwarded-for).
+function clientIp(req: {
+  headers: Record<string, unknown>
+  socket?: { remoteAddress?: string }
+}): string {
+  const cf = req.headers["cf-connecting-ip"]
+  if (typeof cf === "string" && cf.trim()) return cf.trim()
+  const xff = req.headers["x-forwarded-for"]
+  if (typeof xff === "string" && xff.trim()) return xff.split(",")[0]!.trim()
+  return req.socket?.remoteAddress || "unknown"
+}
+
+// Returns true when the IP is within the allowed rate, recording the hit.
+function feedSuggestionRateOk(ip: string): boolean {
+  if (FEED_SUGGESTION_RATE_MAX <= 0) return true
+  const now = Date.now()
+  const recent = (feedSuggestionHits.get(ip) || []).filter(
+    (t) => now - t < FEED_SUGGESTION_RATE_WINDOW_MS,
+  )
+  if (recent.length >= FEED_SUGGESTION_RATE_MAX) {
+    feedSuggestionHits.set(ip, recent)
+    return false
+  }
+  recent.push(now)
+  feedSuggestionHits.set(ip, recent)
+  return true
+}
 
 const DETAIL_ALLOWED_TAGS = new Set([
   "a",
@@ -3108,6 +3150,14 @@ export function rssProxyPlugin(): PluginOption {
           res.end(JSON.stringify({ error: "Method not allowed" }))
           return
         }
+        if (!feedSuggestionRateOk(clientIp(req))) {
+          res.writeHead(429, {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          })
+          res.end(JSON.stringify({ error: "Too many requests" }))
+          return
+        }
         try {
           const body = await new Promise<string>((resolve) => {
             let data = ""
@@ -3133,7 +3183,7 @@ export function rssProxyPlugin(): PluginOption {
             at: new Date().toISOString(),
           }
           const file = join(cacheDir, "feed-suggestions.json")
-          let list: unknown[] = []
+          let list: { id?: unknown; platform?: unknown }[] = []
           if (existsSync(file)) {
             try {
               const existing = JSON.parse(readFileSync(file, "utf-8"))
@@ -3141,6 +3191,18 @@ export function rssProxyPlugin(): PluginOption {
             } catch {
               /* start fresh on corrupt file */
             }
+          }
+          // Dedup: drop an exact (platform + id) repeat — no rewrite, no push.
+          const duplicate = list.some(
+            (s) => s?.id === suggestion.id && (s?.platform ?? "") === suggestion.platform,
+          )
+          if (duplicate) {
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            })
+            res.end(JSON.stringify({ ok: true, duplicate: true }))
+            return
           }
           list.push(suggestion)
           writeFileSync(file, JSON.stringify(list, null, 2))
