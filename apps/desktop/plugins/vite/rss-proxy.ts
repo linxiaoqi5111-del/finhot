@@ -2560,15 +2560,21 @@ export function rssProxyPlugin(): PluginOption {
           } catch {
             /* enrichment is best-effort */
           }
-          // WeChat (公众号) imports only twice a day and posts less frequently than
-          // 微博/雪球/推特, so its entries lose the global newest-N enrichment race and
-          // never get scored — which keeps them out of the public score gate. Give
-          // WeChat a dedicated pass with its own batch budget so it is never starved.
-          try {
-            const r = await enrichMissingEntries({ platform: "wechat" })
-            if (r.enriched > 0) console.info(`[FinHot] AI-enriched ${r.enriched} WeChat entries`)
-          } catch {
-            /* enrichment is best-effort */
+          // The global pass sorts all platforms newest-first and caps to the top
+          // N per cycle, so high-frequency 推特 always fills the budget and the
+          // lower-frequency platforms (微信/微博/雪球) get starved — their entries
+          // never get scored and so never clear the public score gate, making those
+          // sources silently disappear from the public site. Give each lower-frequency
+          // platform its own dedicated pass so every platform gets a fair budget.
+          for (const platform of ["wechat", "weibo", "xueqiu"]) {
+            try {
+              const r = await enrichMissingEntries({ platform })
+              if (r.enriched > 0) {
+                console.info(`[FinHot] AI-enriched ${r.enriched} ${platform} entries`)
+              }
+            } catch {
+              /* enrichment is best-effort */
+            }
           }
           await autoDeployIfConfigured()
         })()
