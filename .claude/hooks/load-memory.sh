@@ -18,7 +18,9 @@ if [ -f "$V/30_conventions/preferences.md" ]; then
   echo
 fi
 
-repo="$(basename "$(git rev-parse --show-toplevel 2>/dev/null || pwd)")"
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+remote="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+if [ -n "${remote:-}" ]; then repo="$(basename "${remote%.git}")"; else repo="$(basename "$repo_root")"; fi
 note="$V/20_projects/$repo.md"
 if [ -f "$note" ]; then
   echo "## 本项目笔记 ($repo)"
