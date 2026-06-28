@@ -269,15 +269,19 @@ function beijingTimeParts(now: Date): { hour: number; minute: number; stamp: str
 }
 
 // Decide which sources to refresh at the given Beijing time.
-//  - 雪球/微博 + Grok native X: every 30 min during 09:30–15:00, plus 21:30
-//    and the next morning at 08:30.
+//  - 雪球/微博/推特 + Grok native X: every 90 min during 09:30–15:00
+//    (09:30, 11:00, 12:30, 14:00) plus a final refresh at the 15:00 close,
+//    plus 21:30 and the next morning at 08:30.
 //  - 微信 (公众号): only 21:30 and 08:30.
 // Returns null when nothing is scheduled for that minute.
 function planRefreshAt(hour: number, minute: number): RefreshPlan | null {
-  const onHalfHour = minute === 0 || minute === 30
   const afterOpen = hour > 9 || (hour === 9 && minute >= 30)
   const beforeClose = hour < 15 || (hour === 15 && minute === 0)
-  const intraday = onHalfHour && afterOpen && beforeClose
+  const inWindow = afterOpen && beforeClose
+  // Every 90 minutes anchored at the 09:30 open, plus the 15:00 close.
+  const minutesSinceOpen = (hour - 9) * 60 + (minute - 30)
+  const atClose = hour === 15 && minute === 0
+  const intraday = inWindow && (minutesSinceOpen % 90 === 0 || atClose)
   const eveningSnapshot = hour === 21 && minute === 30
   const morningSnapshot = hour === 8 && minute === 30
 
@@ -2533,7 +2537,8 @@ export function rssProxyPlugin(): PluginOption {
       })()
 
       // Time-aware scheduler (Beijing time):
-      //  - 雪球/微博 + Grok X: every 30 min 09:30–15:00, plus 21:30 and 08:30.
+      //  - 雪球/微博/推特 + Grok X: every 90 min 09:30–15:00 (09:30/11:00/12:30/
+      //    14:00) plus the 15:00 close, plus 21:30 and 08:30.
       //  - 微信: 21:30 and 08:30 only.
       // New Grok X posts must be fetched by the agent (written to
       // x_grok_entries.json); the scheduler only re-imports whatever seed exists.
