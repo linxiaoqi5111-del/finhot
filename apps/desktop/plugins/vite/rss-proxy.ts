@@ -2560,6 +2560,16 @@ export function rssProxyPlugin(): PluginOption {
           } catch {
             /* enrichment is best-effort */
           }
+          // WeChat (公众号) imports only twice a day and posts less frequently than
+          // 微博/雪球/推特, so its entries lose the global newest-N enrichment race and
+          // never get scored — which keeps them out of the public score gate. Give
+          // WeChat a dedicated pass with its own batch budget so it is never starved.
+          try {
+            const r = await enrichMissingEntries({ platform: "wechat" })
+            if (r.enriched > 0) console.info(`[FinHot] AI-enriched ${r.enriched} WeChat entries`)
+          } catch {
+            /* enrichment is best-effort */
+          }
           await autoDeployIfConfigured()
         })()
       }, SCHEDULE_TICK_MS)
