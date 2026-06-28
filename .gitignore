@@ -64,3 +64,6 @@ apps/desktop/build/*.pfx
 
 # Mobile local E2E build artifacts
 apps/mobile/build-*.tar.gz
+
+# 记忆底座软链（指向 /Users/a77/agent-memory，仅本地，勿提交）
+.agent-memory/
