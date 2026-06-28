@@ -5,11 +5,11 @@
 本机有一个跨 Agent 共享的记忆底座（Obsidian vault）：`/Users/a77/agent-memory`（仓库 `linxiaoqi5111-del/agent-memory`）。
 
 **开始任务前先读：**
+
 - `30_conventions/preferences.md` — 用户偏好与人设（教学模式：讲原理 + 讲技术选型/替代方案对比 + 标注可复用知识点；Git 约定；红线）
 - 本项目对应笔记 `20_projects/finhot.md` — 项目背景、关键决策、任务看板
 
 **完成后回写：** 把关键结论/决策追加到 `20_projects/finhot.md` 的「交接记录」，可复用知识提炼进 `10_knowledge/`。
-
 
 This file provides concise, agent-focused guidance for working in this monorepo. It consolidates the repository's CLAUDE.md guides, .cursor rules, Cursor rules improvements, and modern agent best practices.
 
@@ -179,6 +179,7 @@ These classes map to the UIKit color variables (see `.cursor rules/color` and `a
 ## Quick checklists
 
 - Implementation
+
   - [ ] Is code placed in the right package/app?
   - [ ] Type-safe (no `any`), readable names, English comments where needed.
   - [ ] Uses correct UIKit Tailwind tokens and icon sources.
