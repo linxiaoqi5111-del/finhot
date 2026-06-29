@@ -50,6 +50,28 @@ const TOPIC_SIMILARITY_THRESHOLD = 0.78
 const ENRICH_RECENCY_DAYS = 3
 const ENRICH_PER_FEED_LIMIT = 5 // 每 feed 最多处理最近 N 条需要 AI 的，对齐 Focal 新订阅只摘前 5 条 + 时效控制
 
+// Whitebox feeds: shown raw on the public snapshot. Their entries skip
+// server-side AI enrichment AND bypass the quality score gate, so un-scored
+// announcements (e.g. cninfo L3 candidates) still appear — the public mirror of
+// PR #84's client-side "Skip AI Enrichment" rule. Matched as case-insensitive
+// substrings against the feed URL or category. Configurable via env
+// FINHOT_WHITEBOX_FEED_PATTERNS (comma-separated); defaults cover the cninfo-rss
+// feeds. Set to an empty string to disable.
+const WHITEBOX_FEED_PATTERNS: string[] = (
+  process.env.FINHOT_WHITEBOX_FEED_PATTERNS ?? "l3-hard-delta,cninfo,:8787"
+)
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean)
+
+function isWhiteboxFeed(
+  feed: { url?: string | null; category?: string | null } | undefined,
+): boolean {
+  if (!feed || WHITEBOX_FEED_PATTERNS.length === 0) return false
+  const hay = `${feed.url ?? ""}\n${feed.category ?? ""}`.toLowerCase()
+  return WHITEBOX_FEED_PATTERNS.some((p) => hay.includes(p))
+}
+
 // Local/OpenAI-compatible embeddings endpoint (e.g. a bge-m3 FastAPI server on
 // the Mac). When set, server-side enrichment generates an embedding for each
 // gated-in entry so topic clustering works without depending on the app. When
@@ -912,6 +934,10 @@ async function enrichMissingEntries(
   const now = Date.now()
 
   let candidates = loadAllCachedEntries().filter((e) => {
+    // Whitebox feeds are intentionally never AI-enriched (server-side mirror of
+    // the client Skip-AI rule); skip so no tokens are spent on raw-shown entries.
+    if (isWhiteboxFeed(manifest.feeds[e.feedId])) return false
+
     const published = new Date(e.publishedAt ?? 0).getTime()
     if (now - published > maxAgeMs) return false
 
@@ -1251,6 +1277,12 @@ function passesScoreGateServer(
 ): boolean {
   const feed = manifest.feeds[entry.feedId]
   if (!feed) return false
+  // Recency gate applies to every feed (anti-stale).
+  const published = new Date(entry.publishedAt ?? 0).getTime()
+  if (Date.now() - published > ENRICH_RECENCY_DAYS * 24 * 60 * 60 * 1000) return false
+  // Whitebox feeds (e.g. cninfo L3 candidates) bypass the AI score gate so their
+  // raw, un-enriched announcements still surface on the public snapshot.
+  if (isWhiteboxFeed(feed)) return true
   const en = enrichments[entry.id]
   // Only surface entries scored with the canonical 6-dimension system.
   // Legacy ad-hoc enrichments (single qualityScore, no `scores`) are excluded.
@@ -1258,8 +1290,6 @@ function passesScoreGateServer(
     return false
   }
   // 所有主动订阅的平台统一：近 ENRICH_RECENCY_DAYS 天内 + 分数 >= SCORE_GATE_THRESHOLD。
-  const published = new Date(entry.publishedAt ?? 0).getTime()
-  if (Date.now() - published > ENRICH_RECENCY_DAYS * 24 * 60 * 60 * 1000) return false
   const qs = en.qualityScore
   return qs != null && qs >= SCORE_GATE_THRESHOLD
 }
@@ -4750,10 +4780,13 @@ function renderEntryInsight(e,en,f){
 function platform(feed){var u=(feed&&feed.url||"").toLowerCase();var c=(feed&&feed.category||"").toLowerCase();if(u.indexOf(":8090")>=0||u.indexOf("wechat")>=0||u.indexOf("mp.weixin")>=0||c.indexOf("公众号")>=0)return"wechat";if(u.indexOf("xueqiu")>=0||c.indexOf("雪球")>=0)return"xueqiu";if(u.indexOf("twitter")>=0||u.indexOf("x.com")>=0||u.indexOf("nitter")>=0||u.indexOf("xcancel")>=0||c.indexOf("推特")>=0)return"twitter";if(u.indexOf("weibo")>=0||c.indexOf("微博")>=0)return"weibo";return"other"}
 function platformLabel(p){return p==="xueqiu"?"雪球":p==="twitter"?"推特":p==="weibo"?"微博":p==="wechat"?"公众号":"RSS"}
 var SCORE_GATE=25;
+var WHITEBOX_PATTERNS=${JSON.stringify(WHITEBOX_FEED_PATTERNS)};
+function isWhiteboxFeed(f){if(!f||!WHITEBOX_PATTERNS.length)return false;var hay=((f.url||"")+"\\n"+(f.category||"")).toLowerCase();for(var i=0;i<WHITEBOX_PATTERNS.length;i++){if(hay.indexOf(WHITEBOX_PATTERNS[i])>=0)return true}return false}
 // Primary subscribed accounts (wechat/xueqiu/twitter/weibo) are already curated
 // server-side (recency + score gate + per-feed cap), so the client shows them all.
+// Whitebox feeds (e.g. cninfo L3 candidates) are shown raw, bypassing the gate.
 // Only generic discovery RSS still needs the in-page score gate.
-function passesScoreGate(e){var p=platform(feedMap[e.feedId]);if(p!=="other")return true;var v=scoreVal(enrichments[e.id]);return v!=null&&v>=SCORE_GATE}
+function passesScoreGate(e){var f=feedMap[e.feedId];if(isWhiteboxFeed(f))return true;var p=platform(f);if(p!=="other")return true;var v=scoreVal(enrichments[e.id]);return v!=null&&v>=SCORE_GATE}
 function visibleByCat(e){if(activeCat==="all")return true;return platform(feedMap[e.feedId])===activeCat}
 function isToday(e){var d=new Date(e.publishedAt);var n=new Date();return d.toDateString()===n.toDateString()}
 function countForFeed(id){return (entriesByFeed[id]||[]).length}
