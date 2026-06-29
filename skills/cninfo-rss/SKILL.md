@@ -104,6 +104,28 @@ cp skills/cninfo-rss/templates/com.kb.cninfo-rss.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.kb.cninfo-rss.plist
 ```
 
+## 在 FinHot 订阅
+
+feed 是本地文件，FinHot 订阅的是 URL，所以先用任意静态服务把 `feeds/` 暴露成 HTTP：
+
+```bash
+python3 skills/cninfo-rss/scripts/run.py --apply        # 先生成 feeds/*.xml
+python3 -m http.server 8787 --directory skills/cninfo-rss/feeds
+```
+
+然后在 FinHot 里「添加订阅」填：
+
+- `http://localhost:8787/l3-hard-delta.xml`（全市场 L3 硬事实）
+- `http://localhost:8787/by-category/category_gqjl_szsh.xml`（按分类，如股权激励）
+- `http://localhost:8787/watchlist.xml`（仅自选股）
+
+本 skill 输出的就是合法 ISO8601 日期，FinHot 可直接解析；`parseRssFeed`
+已加固为兼容毫秒时间戳（`<published>1782748800000</published>`，旧 PyRSSHub
+巨潮源会这样输出），不再抛 `Invalid time value`。
+
+> 注意：FinHot 仅做订阅与展示，**不**对这些公告做 AI 打分/摘要——本 skill 是纯硬性
+> 筛选，只产出知识库所缺的 L3 原始事实。
+
 ## 接入 daily-ops 早间流程（建议）
 
 1. 晨间跑一遍 `run.py --apply`（或 LaunchAgent 自动跑）。
@@ -116,7 +138,8 @@ launchctl load ~/Library/LaunchAgents/com.kb.cninfo-rss.plist
 
 - 不解析 PDF 全文（交给 disclosure-archive 人工/OCR）。
 - 不做题材自动映射（`theme_term` 留空）。
-- 不自动写 entity 正文，不接入 FinHot watchlist auto-import。
+- 不自动写 entity 正文，不接入 FinHot watchlist auto-import（仅手动订阅 feed URL）。
+- 不对公告做 AI 打分/摘要/翻译——纯硬性筛选，只补 L3 原始事实。
 - 不依赖 akshare / requests（仅标准库 + PyYAML）。
 
 ## 经验与坑（按日期追加）
