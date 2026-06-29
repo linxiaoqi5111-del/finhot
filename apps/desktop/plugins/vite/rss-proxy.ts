@@ -5838,6 +5838,25 @@ function isLowQualityEntry(entry: {
   return false
 }
 
+// Parse a feed entry date into an ISO string. Handles ISO 8601, RFC 822 and
+// bare epoch timestamps in seconds or milliseconds. Some RSSHub routes (e.g.
+// the cninfo/巨潮 route) emit `<published>1782748800000</published>` as a raw
+// millisecond integer, which `new Date(string)` cannot parse and would throw
+// "Invalid time value" on `.toISOString()`. Falls back to now when unparseable.
+function parseFeedDate(raw: string | null): string {
+  if (!raw) return new Date().toISOString()
+  const trimmed = raw.trim()
+  if (/^\d+$/.test(trimmed)) {
+    const n = Number(trimmed)
+    // 13+ digits ≈ epoch ms; 10-digit values are epoch seconds.
+    const ms = trimmed.length >= 13 ? n : n * 1000
+    const fromEpoch = new Date(ms)
+    return Number.isNaN(fromEpoch.getTime()) ? new Date().toISOString() : fromEpoch.toISOString()
+  }
+  const parsed = new Date(trimmed)
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString()
+}
+
 function parseEntries(xml: string, isAtom: boolean, feedUrl: string, limit: number) {
   const itemTag = isAtom ? "entry" : "item"
   const regex = new RegExp(`<${itemTag}[\\s>][\\s\\S]*?</${itemTag}>`, "gi")
@@ -5860,7 +5879,7 @@ function parseEntries(xml: string, isAtom: boolean, feedUrl: string, limit: numb
 
       const guid = extractTag(item, isAtom ? "id" : "guid") ?? link ?? title
       const id = generateId(`${feedUrl}::${guid}`)
-      const publishedAt = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString()
+      const publishedAt = parseFeedDate(pubDate)
 
       return {
         id,

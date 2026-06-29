@@ -235,6 +235,51 @@ describe("local action rules", () => {
     expect(result.entry.description).toBe("new description")
   })
 
+  test("flags skipEnrichment when a matching rule opts out of AI enrichment", () => {
+    const matched = applyLocalActionRulesToEntry(createEntry(), {
+      feed: {
+        id: "feed-1",
+        type: "feed",
+        title: "Cninfo L3",
+        url: "http://localhost:8787/l3-hard-delta.xml",
+      },
+      view: FeedViewType.Articles,
+      rules: [
+        {
+          index: 0,
+          name: "No AI for cninfo",
+          condition: [
+            [
+              {
+                field: "feed_url",
+                operator: "contains",
+                value: "l3-hard-delta",
+              },
+            ],
+          ],
+          result: {
+            skipEnrichment: true,
+          },
+        },
+      ],
+    })
+
+    const unmatched = applyLocalActionRulesToEntry(createEntry(), {
+      feed: {
+        id: "feed-2",
+        type: "feed",
+        title: "Other Feed",
+        url: "https://example.com/feed.xml",
+      },
+      view: FeedViewType.Articles,
+      rules: matched.matchedRules,
+    })
+
+    expect(matched.skipEnrichment).toBe(true)
+    expect(matched.blocked).toBe(false)
+    expect(unmatched.skipEnrichment).toBe(false)
+  })
+
   test("runs readability side effect for matching readability rules", async () => {
     const fetchReadabilityContent = vi.fn().mockImplementation(async () => {})
     const result = applyLocalActionRulesToEntry(createEntry(), {

@@ -75,6 +75,7 @@
   "actions.action_card.select_operation": "Sélectionner une opération",
   "actions.action_card.settings": "Paramètres",
   "actions.action_card.silence": "Silence",
+  "actions.action_card.skip_enrichment": "Ignorer l'enrichissement IA",
   "actions.action_card.source_content": "Voir le contenu source",
   "actions.action_card.star": "Favori",
   "actions.action_card.summary.action_count": "{{count}} actions activées",

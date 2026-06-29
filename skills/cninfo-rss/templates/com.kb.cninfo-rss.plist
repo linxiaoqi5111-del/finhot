@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  巨潮公告订阅器 LaunchAgent 模板（每 30 分钟跑一次 --apply）。
+  安装：
+    1) 按本机实际路径改 <ProgramArguments> 里的 run.py 绝对路径，及 WorkingDirectory
+    2) cp 本文件到 ~/Library/LaunchAgents/com.kb.cninfo-rss.plist
+    3) launchctl load ~/Library/LaunchAgents/com.kb.cninfo-rss.plist
+  卸载：launchctl unload ~/Library/LaunchAgents/com.kb.cninfo-rss.plist
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.kb.cninfo-rss</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>/Users/a77/finhot/skills/cninfo-rss/scripts/run.py</string>
+        <string>--apply</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/a77/finhot</string>
+
+    <key>StartInterval</key>
+    <integer>1800</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/cninfo-rss.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/cninfo-rss.err.log</string>
+</dict>
+</plist>

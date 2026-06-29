@@ -42,6 +42,7 @@ export type LocalActionResult = {
   blocked: boolean
   starred: boolean
   shouldNotify: boolean
+  skipEnrichment: boolean
   webhooks: string[]
   matchedRules: ActionItem[]
 }
@@ -282,6 +283,7 @@ export const applyLocalActionRulesToEntry = (
   let blocked = false
   let starred = false
   let shouldNotify = false
+  let skipEnrichment = false
   const webhooks: string[] = []
 
   for (const rule of matchedRules) {
@@ -310,6 +312,9 @@ export const applyLocalActionRulesToEntry = (
     if (result.newEntryNotification) {
       shouldNotify = true
     }
+    if (result.skipEnrichment) {
+      skipEnrichment = true
+    }
     if (result.webhooks) {
       webhooks.push(...result.webhooks.filter(Boolean))
     }
@@ -320,6 +325,7 @@ export const applyLocalActionRulesToEntry = (
     blocked,
     starred,
     shouldNotify,
+    skipEnrichment,
     webhooks: Array.from(new Set(webhooks)),
     matchedRules,
   }
