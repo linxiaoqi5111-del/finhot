@@ -71,7 +71,10 @@ class TestClassify(unittest.TestCase):
         # 注意：避开低确定性词（如"计划"）才会判为 hard_delta
         out = fc.classify(self._rec("限制性股票授予登记完成的公告", cat="category_gqjl_szsh"), self.cfg)
         self.assertIsNotNone(out)
-        self.assertEqual(out["evidence_layer"], "L3")
+        # 正文未解析 → 按 KB 口径只能标候选，不能直接 L3 hard_fact
+        self.assertEqual(out["evidence_layer"], "L1_L3_candidate")
+        self.assertEqual(out["fact_hardness"], "review_candidate")
+        self.assertTrue(out["review_required"])
         self.assertEqual(out["fact_type"], "equity_incentive")
         self.assertEqual(out["update_type"], "hard_delta")
         self.assertTrue(out["l3_match_reason"].startswith("category:"))
@@ -91,6 +94,26 @@ class TestClassify(unittest.TestCase):
 
     def test_no_match(self):
         self.assertIsNone(fc.classify(self._rec("关于公司地址变更的公告"), self.cfg))
+
+
+class TestDetailUrl(unittest.TestCase):
+    def test_detail_url_has_stockcode_and_announcement_id(self):
+        # 回归：巨潮详情页只给 annoId 会 500，必须同时带 stockCode + announcementId
+        rec = fc.normalize_raw({
+            "secCode": "000603", "announcementId": "1225396198",
+            "secName": "盛达资源", "announcementTitle": "2026年半年度业绩预告",
+            "announcementTime": 1782748800000,
+        })
+        self.assertEqual(
+            rec["detail_url"],
+            "https://www.cninfo.com.cn/new/disclosure/detail"
+            "?stockCode=000603&announcementId=1225396198",
+        )
+        self.assertNotIn("?annoId=", rec["detail_url"])
+
+    def test_detail_url_blank_when_no_id(self):
+        rec = fc.normalize_raw({"secCode": "000603", "announcementId": ""})
+        self.assertEqual(rec["detail_url"], "")
 
 
 class TestDedup(unittest.TestCase):

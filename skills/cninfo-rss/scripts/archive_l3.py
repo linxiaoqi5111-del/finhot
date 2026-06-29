@@ -22,10 +22,10 @@ CN_NOW = lambda: datetime.now(timezone(__import__("datetime").timedelta(hours=8)
 _FM_ORDER = [
     "archive_id", "theme_term", "canonical_concept", "company", "code",
     "chain_layer", "role", "exposure_strength", "evidence_layer", "update_type",
-    "fact_type", "source_type", "source_origin", "fact_status", "confidence",
-    "evidence_polarity", "time_scope", "fact_traceability", "publish_date",
-    "url", "pdf_url", "announcement_id", "l3_match_reason", "source",
-    "fetched_at", "ingest_status", "review_status", "not_applied",
+    "fact_type", "fact_hardness", "source_type", "source_origin", "fact_status",
+    "confidence", "evidence_polarity", "time_scope", "fact_traceability",
+    "publish_date", "url", "pdf_url", "announcement_id", "l3_match_reason", "source",
+    "fetched_at", "ingest_status", "review_status", "review_required", "not_applied",
     "quoted_text", "extracted_facts",
 ]
 
@@ -108,8 +108,12 @@ def archive_records(records: list[dict], kb_dir: Path, batch_id: str, *, apply: 
                 "archive_id": archive_id, "theme_term": "", "canonical_concept": "",
                 "company": rec["sec_name"], "code": rec["sec_code"],
                 "chain_layer": "", "role": "", "exposure_strength": "related",
-                "evidence_layer": "L3", "update_type": rec["update_type"],
+                # 正文未解析，按 KB 口径只能当候选（L1_L3_candidate +
+                # review_candidate + review_required=true），不能直接当 L3 hard_fact。
+                "evidence_layer": rec.get("evidence_layer", "L1_L3_candidate"),
+                "update_type": rec["update_type"],
                 "fact_type": rec.get("fact_type", "other_hard"),
+                "fact_hardness": rec.get("fact_hardness", "review_candidate"),
                 "source_type": "announcement", "source_origin": "primary_official",
                 "fact_status": rec.get("fact_status", "realized"),
                 "confidence": rec.get("confidence", "high"),
@@ -119,7 +123,9 @@ def archive_records(records: list[dict], kb_dir: Path, batch_id: str, *, apply: 
                 "announcement_id": rec["announcement_id"],
                 "l3_match_reason": rec.get("l3_match_reason", ""), "source": "cninfo-rss",
                 "fetched_at": fetched_at, "ingest_status": "archived_only",
-                "review_status": "unreviewed", "not_applied": True,
+                "review_status": "unreviewed",
+                "review_required": bool(rec.get("review_required", True)),
+                "not_applied": True,
                 "quoted_text": rec["title"], "extracted_facts": [rec["title"]],
             }
             if apply:
@@ -137,10 +143,14 @@ def archive_records(records: list[dict], kb_dir: Path, batch_id: str, *, apply: 
             "archive_id": archive_id, "batch_id": batch_id, "theme_term": "",
             "company": rec["sec_name"], "code": rec["sec_code"],
             "source_type": "announcement", "title": rec["title"],
-            "publish_date": publish_date, "evidence_layer": "L3",
+            "publish_date": publish_date,
+            "evidence_layer": rec.get("evidence_layer", "L1_L3_candidate"),
             "update_type": rec["update_type"], "markdown_path": markdown_rel,
             "ingest_status": "archived_only", "review_status": "unreviewed",
-            "fact_type": rec.get("fact_type"), "source_origin": "primary_official",
+            "review_required": bool(rec.get("review_required", True)),
+            "fact_type": rec.get("fact_type"),
+            "fact_hardness": rec.get("fact_hardness", "review_candidate"),
+            "source_origin": "primary_official",
             "fact_status": rec.get("fact_status"), "confidence": rec.get("confidence"),
             "source": "cninfo-rss", "announcement_id": rec["announcement_id"],
             "detail_url": rec.get("detail_url", ""),

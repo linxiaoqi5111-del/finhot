@@ -28,7 +28,7 @@ import yaml
 CN_TZ = timezone(timedelta(hours=8))
 QUERY_URL = "https://www.cninfo.com.cn/new/hisAnnouncement/query"
 STATIC_BASE = "http://static.cninfo.com.cn/"
-DETAIL_BASE = "https://www.cninfo.com.cn/new/disclosure/detail?annoId="
+DETAIL_BASE = "https://www.cninfo.com.cn/new/disclosure/detail"
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
@@ -205,7 +205,10 @@ def normalize_raw(item: dict) -> dict:
         "published_at": ts_to_iso(item.get("announcementTime")),
         "published_ms": item.get("announcementTime"),
         "pdf_url": pdf_url,
-        "detail_url": f"{DETAIL_BASE}{ann_id}" if ann_id else "",
+        # 巨潮详情页必须同时带 stockCode 与 announcementId；只给 annoId 会 500。
+        "detail_url": (
+            f"{DETAIL_BASE}?stockCode={code}&announcementId={ann_id}" if ann_id else ""
+        ),
         "market": market_of_code(code),
     }
 
@@ -272,7 +275,13 @@ def classify(record: dict, config: dict) -> dict | None:
     out.update(
         {
             "l3_match_reason": reason,
-            "evidence_layer": "L3",
+            # 正文 PDF 未解析，按 KB 口径(INGEST_FIELD_STANDARDS)只能标候选，
+            # 不得直接当 hard_fact/L3：evidence_layer=L1_L3_candidate +
+            # fact_hardness=review_candidate + review_required=true，交 review 后
+            # 才由 disclosure-archive 解析正文升级为真 L3。
+            "evidence_layer": "L1_L3_candidate",
+            "fact_hardness": "review_candidate",
+            "review_required": True,
             "update_type": update_type,
             "fact_type": fact_type,
             "confidence": confidence,

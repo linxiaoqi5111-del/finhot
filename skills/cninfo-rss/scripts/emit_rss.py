@@ -117,7 +117,7 @@ if __name__ == "__main__":
             "title": "股权激励计划草案",
             "published_at": "2026-06-30T08:00:00+08:00",
             "pdf_url": "http://static.cninfo.com.cn/finalpage/2026-06-30/1225398031.PDF",
-            "detail_url": "https://www.cninfo.com.cn/new/disclosure/detail?annoId=1225398031",
+            "detail_url": "https://www.cninfo.com.cn/new/disclosure/detail?stockCode=688689&announcementId=1225398031",
             "category_code": "category_gqjl_szsh",
             "fact_type": "equity_incentive",
             "update_type": "hard_delta",
