@@ -1,0 +1,125 @@
+# 巨潮公告分类订阅器配置（用户可编辑）
+# 说明：本文件驱动 fetch / 过滤 / 分类 / RSS / 归档全流程。改这里即可调订阅口径。
+
+# ---- 抓取范围 ----
+refresh_interval_minutes: 30      # 仅供 LaunchAgent 模板参考，脚本本身不常驻
+lookback_days: 7                  # seDate 回看天数（默认最近 7 天）
+markets: [szse, sse, bj]          # 保留的市场：szse=深 sse=沪 bj=北。按 code 前缀判定
+watchlist_codes: []               # 空=全市场；非空=只保留这些代码（6 位字符串）
+max_pages_per_source: 5           # 每个分类/关键词最多翻几页（防封 + 控时长），单页 50 条
+page_size: 50
+rate_limit_seconds: 2             # 串行请求间隔，防封
+
+# ---- 输出落点 ----
+# 相对路径相对「仓库根目录」解析（即包含 skills/ 的目录）；绝对路径原样使用。
+output:
+  rss_dir: skills/cninfo-rss/feeds
+  kb_archive_dir: ../knowledge-base-private/wiki/raw/disclosures
+
+# ---- L3 巨潮官方分类（分类码路径）----
+# code 命中即进入 L3 候选；reason=category:<name>。enabled:false 的不订阅。
+l3_categories:
+  - code: category_yjygjxz_szsh
+    name: 业绩预告
+    fact_types: [earnings_guidance]
+    enabled: true
+  - code: category_yjkb_szsh
+    name: 业绩快报
+    fact_types: [earnings_flash]
+    enabled: true
+  - code: category_zj_szsh
+    name: 增减持
+    fact_types: [share_change]
+    enabled: true
+  - code: category_gqjl_szsh
+    name: 股权激励
+    fact_types: [equity_incentive]
+    enabled: true
+  - code: category_gfhpxx_szsh
+    name: 分红送转
+    fact_types: [dividend]
+    enabled: false                # 默认关：非 L3 硬催化
+
+# ---- L3 标题关键词（关键词兜底路径，走 cninfo searchkey 服务端检索）----
+l3_title_keywords:
+  include_any:                    # 标题命中任一 → 进入 L3 候选
+    - 重大合同
+    - 中标
+    - 签订
+    - 订单
+    - 量产
+    - 投产
+    - 扩产
+    - 产能
+    - 客户导入
+    - 通过认证
+    - 取得认证
+    - 重大资产重组
+    - 收购
+    - 并购
+    - 定增
+    - 回购
+    - 增持
+    - 减持
+    - 预披露
+    - 项目落地
+    - 试生产
+    - 达产
+  exclude_any:                    # 命中任一 → 直接丢弃（噪音），优先级最高
+    - 董事会决议
+    - 监事会决议
+    - 股东大会通知
+    - 召开股东大会
+    - 法律意见书
+    - 独立意见
+    - 核查意见
+    - 保荐意见
+    - 审计报告
+    - 理财
+    - 购买理财产品
+    - 闲置资金
+    - 日常关联交易
+    - 续聘
+    - 换届
+    - 辞职
+    - 聘任
+
+# ---- 低确定性降级（标题含这些词）----
+# evidence_layer 仍 L3，但 update_type=review_candidate，confidence=low，不进 entity 正文
+low_confidence_keywords:
+  - 拟
+  - 计划
+  - 预计
+  - 有望
+  - 探索
+  - 布局
+  - 关注
+  - 战略合作
+  - 框架协议
+  - 意向
+
+# ---- 关键词 → fact_type 映射（关键词路径用；分类路径用 l3_categories.fact_types）----
+fact_type_by_keyword:
+  重大合同: order_contract
+  中标: order_contract
+  签订: order_contract
+  订单: order_contract
+  量产: mass_production
+  试生产: mass_production
+  达产: mass_production
+  投产: mass_production
+  扩产: capacity_expansion
+  产能: capacity_expansion
+  客户导入: customer_validation
+  通过认证: certification
+  取得认证: certification
+  重大资产重组: restructuring
+  预披露: restructuring
+  收购: acquisition
+  并购: acquisition
+  定增: private_placement
+  回购: buyback
+  增持: share_change
+  减持: share_change
+  项目落地: project_landing
+default_fact_type: other_hard
