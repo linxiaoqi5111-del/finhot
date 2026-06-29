@@ -123,8 +123,19 @@ python3 -m http.server 8787 --directory skills/cninfo-rss/feeds
 已加固为兼容毫秒时间戳（`<published>1782748800000</published>`，旧 PyRSSHub
 巨潮源会这样输出），不再抛 `Invalid time value`。
 
-> 注意：FinHot 仅做订阅与展示，**不**对这些公告做 AI 打分/摘要——本 skill 是纯硬性
-> 筛选，只产出知识库所缺的 L3 原始事实。
+### 关掉这些公告的 AI 富集（保持纯硬筛）
+
+FinHot 本地订阅默认会对新条目触发 BYOK AI 富集（摘要/翻译/标签/质量评分）。
+要让这些公告**只展示、不走 AI**，在 FinHot 设置 → Actions 里加一条规则：
+
+- 条件（When）：`feed_url` `contains` `l3-hard-delta`（或 `:8787`，按你的 feed 地址）
+- 动作（Then）：勾选 **Skip AI Enrichment**（跳过 AI 富集）
+
+命中后条目照常入库、照常显示（标题/摘要/PDF 链接都在，非黑盒），仅跳过 AI
+富集；排序是本地启发式（不调用 AI），不受影响。
+
+> 注意：FinHot 仅做订阅与展示，配合上面的规则即**不**对这些公告做 AI 打分/摘要
+> ——本 skill 是纯硬性筛选，只产出知识库所缺的 L3 原始事实。
 
 ## 接入 daily-ops 早间流程（建议）
 
