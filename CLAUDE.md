@@ -16,10 +16,12 @@
 本机有一个跨 Agent 共享的记忆底座（Obsidian vault）：`/Users/a77/agent-memory`（仓库 `linxiaoqi5111-del/agent-memory`），repo 内可经软链 `.agent-memory/` 访问。
 
 **开始任务前先读：**
+
 - `.agent-memory/30_conventions/preferences.md` — 用户偏好与人设
 - 本项目对应笔记 `.agent-memory/20_projects/finhot.md` — 项目背景、关键决策、任务看板
 
 **完成后回写：** 把关键结论/决策追加到 `.agent-memory/20_projects/finhot.md` 的「交接记录」，可复用知识提炼进 `.agent-memory/10_knowledge/`。详细回写步骤见 `.agent-memory/40_playbooks/devin-writeback.md`。
 
 ## 完整规范
+
 项目栈、命令、目录导览、Git 分支安全规则等详见本仓库 `AGENTS.md`。

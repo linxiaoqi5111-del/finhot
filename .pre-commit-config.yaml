@@ -5,10 +5,10 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: detect-private-key            # 内容里出现私钥 -> 拦截
-      - id: check-added-large-files       # 新增大文件 -> 拦截
+      - id: detect-private-key # 内容里出现私钥 -> 拦截
+      - id: check-added-large-files # 新增大文件 -> 拦截
         args: ["--maxkb=5120"]
-      - id: check-merge-conflict          # 残留冲突标记 -> 拦截
+      - id: check-merge-conflict # 残留冲突标记 -> 拦截
   - repo: local
     hooks:
       - id: block-forbidden-files
