@@ -384,8 +384,10 @@ function loadWatchlist(): WatchlistData {
 //    (importGrokX / x_grok_entries.json); both paths share the same
 //    finhot://twitter/<handle> feed and derive entry ids from the tweet status
 //    id, so the same tweet from either path collapses to one entry.
-// The watchlist `rss` type is excluded — generic feeds are managed via the
-// app's own subscription system, not this auto-importer.
+//  - rss ({ name, url }): generic feeds fetched as-is into the public cache.
+//    Used for self-hosted/static sources (e.g. the cninfo L3-candidate feed on
+//    :8787) so they reach the deployed snapshot; whitebox feeds additionally
+//    skip enrichment and bypass the score gate (see isWhiteboxFeed).
 // Plain-string wechat names are skipped because resolving them needs a
 // wechat2rss endpoint + token, which is not available to this plugin.
 function buildWatchlistImportJobs(data: WatchlistData): WatchlistImportJob[] {
@@ -409,6 +411,11 @@ function buildWatchlistImportJobs(data: WatchlistData): WatchlistImportJob[] {
         kind: "twitter",
         ref: handle,
       })
+    }
+  }
+  for (const item of data.rss ?? []) {
+    if (item && typeof item === "object" && item.url?.trim()) {
+      jobs.push({ url: item.url.trim(), category: "RSS", kind: "rss" })
     }
   }
   return jobs
