@@ -326,6 +326,16 @@ def _market_allowed(record: dict, markets: list[str]) -> bool:
     return (not markets) or record.get("market") in markets
 
 
+# A 股风险警示标记只会出现在证券简称前缀（ST/*ST/SST/S*ST）或退市整理期后缀（…退）；
+# 中文公司名不含这些拉丁字母，命中即风险股。用 re 兜全大小写/全角空格。
+_ST_RE = re.compile(r"^[\*S]{0,2}ST(?![A-Z])", re.IGNORECASE)
+
+
+def _is_risk_warned(sec_name: str) -> bool:
+    name = (sec_name or "").replace("　", "").replace(" ", "")
+    return bool(_ST_RE.match(name)) or name.endswith("退")
+
+
 def collect(config: dict, client: CninfoClient | None = None) -> list[dict]:
     """按 config 抓取 + 归一化 + 分类 + 市场/自选股过滤，返回去重后的 L3 候选列表。"""
     client = client or CninfoClient(rate_limit_seconds=float(config.get("rate_limit_seconds", 2)))
@@ -375,11 +385,15 @@ def collect(config: dict, client: CninfoClient | None = None) -> list[dict]:
             ):
                 _ingest(item, "")
 
+    exclude_st = bool(config.get("exclude_st", True))
+
     results: list[dict] = []
     for rec in raw_by_id.values():
         if watchlist and rec["sec_code"] not in watchlist:
             continue
         if not _market_allowed(rec, markets):
+            continue
+        if exclude_st and _is_risk_warned(rec.get("sec_name", "")):
             continue
         classified = classify(rec, config)
         if classified is not None:

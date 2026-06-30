@@ -32,6 +32,36 @@ def _cfg():
     }
 
 
+class TestExcludeST(unittest.TestCase):
+    def test_risk_warned_names(self):
+        for name in ("ST龙大", "*ST禾信", "*ST明德", "SST前锋", "S*ST佳通", "st板眼", "* ST 全角", "园城退"):
+            self.assertTrue(fc._is_risk_warned(name), name)
+
+    def test_normal_names_kept(self):
+        for name in ("北新路桥", "中复神鹰", "贵州茅台", "宁德时代", "STO测试不存在", "顺丰控股"):
+            self.assertFalse(fc._is_risk_warned(name), name)
+
+    def test_collect_filters_st(self):
+        # collect 末段应按 exclude_st 剔除 ST 股；用假 client 注入两条公告验证
+        class _FakeClient:
+            def iter_announcements(self, **kw):
+                yield {"secCode": "002726", "secName": "ST龙大", "announcementId": "a1",
+                       "announcementTitle": "关于签订重大合同的公告", "announcementTime": 1782748800000}
+                yield {"secCode": "002307", "secName": "北新路桥", "announcementId": "a2",
+                       "announcementTitle": "关于签订重大合同的公告", "announcementTime": 1782748800000}
+
+        cfg = dict(_cfg())
+        cfg.update({"markets": [], "watchlist_codes": [], "exclude_st": True,
+                    "hard_delta_combo_rules": {}})
+        names = {r["sec_name"] for r in fc.collect(cfg, client=_FakeClient())}
+        self.assertIn("北新路桥", names)
+        self.assertNotIn("ST龙大", names)
+        # 关掉开关则保留
+        cfg["exclude_st"] = False
+        names2 = {r["sec_name"] for r in fc.collect(cfg, client=_FakeClient())}
+        self.assertIn("ST龙大", names2)
+
+
 class TestTimestamp(unittest.TestCase):
     def test_ms_to_iso(self):
         # 1782748800000 ms = 2026-06-30 00:00:00 +08:00

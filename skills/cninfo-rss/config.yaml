@@ -6,6 +6,7 @@ refresh_interval_minutes: 30 # 仅供 LaunchAgent 模板参考，脚本本身不
 lookback_days: 7 # seDate 回看天数（默认最近 7 天）
 markets: [szse, sse, bj] # 保留的市场：szse=深 sse=沪 bj=北。按 code 前缀判定
 watchlist_codes: [] # 空=全市场；非空=只保留这些代码（6 位字符串）
+exclude_st: true # 剔除 ST/*ST/SST/S*ST 风险警示股及 *退* 退市整理期个股（按 secName 判定）
 max_pages_per_source: 5 # 每个分类/关键词最多翻几页（防封 + 控时长），单页 50 条
 page_size: 50
 rate_limit_seconds: 2 # 串行请求间隔，防封
