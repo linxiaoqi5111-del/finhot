@@ -11,7 +11,7 @@ import { api } from "../../context"
 import { createImmerSetter, createZustandStore } from "../../lib/helper"
 import { loadLocalActionRules, normalizeLocalActionRules, saveLocalActionRules } from "./local"
 
-export type LocalActionId = "readabilityQualityScore" | "skipEnrichment"
+export type LocalActionId = "readabilityQualityScore"
 export type ActionId = ActionIdRes | LocalActionId
 
 export type ActionItem = Omit<ActionItemRes, "condition"> & {

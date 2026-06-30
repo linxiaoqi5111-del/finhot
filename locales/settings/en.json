@@ -75,7 +75,6 @@
   "actions.action_card.select_operation": "Select operation",
   "actions.action_card.settings": "Settings",
   "actions.action_card.silence": "Silence",
-  "actions.action_card.skip_enrichment": "Skip AI Enrichment",
   "actions.action_card.source_content": "View Source Content",
   "actions.action_card.star": "Star",
   "actions.action_card.summary.action_count": "{{count}} actions enabled",

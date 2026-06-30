@@ -156,12 +156,6 @@ export const availableActionMap: Record<ActionId, ActionAction> = {
     icon: "macwindow",
     iconClassname: "i-focal-web",
   },
-  skipEnrichment: {
-    value: "skipEnrichment",
-    label: "actions.action_card.skip_enrichment",
-    icon: "sparkles",
-    iconClassname: "i-focal-ai",
-  },
   newEntryNotification: {
     value: "newEntryNotification",
     label: "actions.action_card.new_entry_notification",

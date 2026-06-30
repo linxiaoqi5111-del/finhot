@@ -75,7 +75,6 @@
   "actions.action_card.select_operation": "选择操作",
   "actions.action_card.settings": "设置",
   "actions.action_card.silence": "静音",
-  "actions.action_card.skip_enrichment": "跳过 AI 富集",
   "actions.action_card.source_content": "查看原始内容",
   "actions.action_card.star": "收藏",
   "actions.action_card.summary.action_count": "已启用 {{count}} 个动作",
