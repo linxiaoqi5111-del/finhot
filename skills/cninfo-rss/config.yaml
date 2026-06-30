@@ -17,20 +17,26 @@ output:
   kb_archive_dir: ../knowledge-base-private/wiki/raw/disclosures
 
 # ---- L3 巨潮官方分类（分类码路径）----
-# code 命中即进入 L3 候选；reason=category:<name>。enabled:false 的不订阅。
+# 重要：分类码命中只是「粗筛」，不能直接当 hard_delta；命中后还要过标题二次
+# 校验（title_include_any / title_exclude_any）才算「准入」。enabled:false 不订阅。
+# 分类码语义以巨潮前端分类枚举为准（不要望文生义）。
 l3_categories:
   - code: category_yjygjxz_szsh
     name: 业绩预告
     fact_types: [earnings_guidance]
     enabled: true
+    # 业绩预告分类较精准；噪音（风险提示等）由全局 exclude_any 兜底
   - code: category_yjkb_szsh
     name: 业绩快报
     fact_types: [earnings_flash]
-    enabled: true
-  - code: category_zj_szsh
-    name: 增减持
+    enabled: false # 关：该分类码实测返回大量全量公告，噪音高；业绩快报改走标题关键词
+  - code: category_gqbd_szsh
+    name: 股权变动
     fact_types: [share_change]
     enabled: true
+    # 旧版误用 category_zj_szsh（巨潮官方含义=中介报告，非增减持），已纠正为
+    # category_gqbd_szsh=股权变动。该分类仍偏宽，必须过标题准入门：
+    title_include_any: [增持, 减持, 权益变动, 持股变动, 股份变动]
   - code: category_gqjl_szsh
     name: 股权激励
     fact_types: [equity_incentive]
@@ -65,6 +71,12 @@ l3_title_keywords:
     - 项目落地
     - 试生产
     - 达产
+    # 业绩快报/预增预减（原 category_yjkb_szsh 关闭后改走标题，更可控）
+    - 业绩快报
+    - 业绩预增
+    - 业绩预减
+    - 扭亏
+    - 亏损
   exclude_any: # 命中任一 → 直接丢弃（噪音），优先级最高
     - 董事会决议
     - 监事会决议
@@ -83,6 +95,17 @@ l3_title_keywords:
     - 换届
     - 辞职
     - 聘任
+    # 实测样本里的高噪音类型（担保进展/问询回复/股东会决议/风险提示等）
+    - 专项说明
+    - 承诺函
+    - 审阅报告
+    - 问询函
+    - 关注函
+    - 回复
+    - 股东大会决议
+    - 股东会决议
+    - 风险提示
+    - 担保
 
 # ---- 低确定性降级（标题含这些词）----
 # evidence_layer 仍 L3，但 update_type=review_candidate，confidence=low，不进 entity 正文
@@ -122,4 +145,20 @@ fact_type_by_keyword:
   增持: share_change
   减持: share_change
   项目落地: project_landing
+  业绩快报: earnings_flash
+  业绩预增: earnings_guidance
+  业绩预减: earnings_guidance
+  扭亏: earnings_guidance
+  亏损: earnings_guidance
 default_fact_type: other_hard
+
+# ---- 组合规则：收紧 hard_delta（避免「宽词」单独命中即判高确定性）----
+# 这些宽词单独命中只算 review_candidate（confidence=low）；标题需同时含同组任一
+# 伴随词，才升级为 hard_delta（confidence=high）。未列出的关键词不受此约束。
+# 人话：官方分类/单关键词是「粗筛」，组合规则是「准入门」。
+hard_delta_combo_rules:
+  签订: [合同, 订单, 协议, 中标, 采购, 框架]
+  产能: [投产, 达产, 扩产, 量产, 募投, 建设]
+  增持: [完成, 计划, 进展, 权益变动, 股份, 股东, 持股]
+  减持: [完成, 计划, 进展, 权益变动, 股份, 股东, 持股]
+  亏损: [业绩, 净利, 预计, 预告, 季度, 年度, 半年]

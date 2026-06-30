@@ -76,10 +76,15 @@ def write_feeds(records: list[dict], rss_dir: Path, config: dict) -> dict:
     (rss_dir / "by-category").mkdir(parents=True, exist_ok=True)
     written: dict[str, int] = {}
 
-    # 1) 全市场 L3 硬事实合集（仅 hard_delta）
+    # 1) 全市场 L3 候选 · 高确定性合集（仅 hard_delta）
+    # 命名刻意叫「候选」而非「硬事实」：本 skill 只读标题+元数据、未解析正文，
+    # 按 KB 口径只能产 L1_L3_candidate，不能误导为已验证的 L3 hard_fact。
     hard = [r for r in records if r.get("update_type") == "hard_delta"]
-    p = rss_dir / "l3-hard-delta.xml"
-    p.write_text(build_atom("l3-hard-delta", "巨潮 L3 硬事实合集", hard), encoding="utf-8")
+    p = rss_dir / "l3-candidates-hard-delta.xml"
+    p.write_text(
+        build_atom("l3-candidates-hard-delta", "巨潮 L3 候选 · 高确定性公告", hard),
+        encoding="utf-8",
+    )
     written[str(p)] = len(hard)
 
     # 2) 按分类（hard + review 都进各自分类）

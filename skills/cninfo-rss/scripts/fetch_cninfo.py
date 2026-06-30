@@ -220,33 +220,59 @@ def _contains_any(text: str, words: Iterable[str]) -> str | None:
     return None
 
 
+def _combo_satisfied(title: str, hit: str, combo_rules: dict) -> bool:
+    """组合规则校验：宽词命中后是否够格当 hard_delta。
+
+    若 hit 在 combo_rules 里（如「签订」「产能」），标题须同时含同组任一伴随词
+    （如「合同/订单」「投产/达产」）才返回 True；否则 False（应降级 review）。
+    不在规则表里的关键词默认 True（不受约束）。
+    """
+    companions = (combo_rules or {}).get(hit)
+    if not companions:
+        return True
+    return _contains_any(title, companions) is not None
+
+
 def classify(record: dict, config: dict) -> dict | None:
     """对一条归一化记录做 L3 判定。
 
     返回补全了 evidence_layer/update_type/fact_type/confidence/... 的记录；
     若命中 exclude_any 或不构成 L3 候选则返回 None。
 
-    优先级：exclude_any（丢弃）> 分类码命中 > 关键词命中 > 不命中（None）。
+    优先级：全局 exclude_any（丢弃）> 分类码命中（须过分类内标题准入门）>
+            关键词命中 > 不命中（None）。
+    分类码/单关键词只是「粗筛」，标题二次校验才是「准入门」。
     """
     title = record.get("title", "")
     kw = config.get("l3_title_keywords", {}) or {}
 
-    # 1) 噪音直接丢弃（最高优先级）
+    # 1) 全局噪音直接丢弃（最高优先级）
     if _contains_any(title, kw.get("exclude_any", []) or []):
         return None
 
     # 2) 判定命中来源
     fact_type = None
     reason = None
+    combo_demote = False  # 宽词单独命中（缺组合伴随词）→ 降级 review_candidate
 
     # 分类码路径（category_code 在 collect 阶段已写入）
     cat_code = record.get("category_code") or ""
     cat_map = {c["code"]: c for c in (config.get("l3_categories") or []) if c.get("enabled", True)}
     if cat_code and cat_code in cat_map:
         cat = cat_map[cat_code]
-        fts = cat.get("fact_types") or []
-        fact_type = fts[0] if fts else config.get("default_fact_type", "other_hard")
-        reason = f"category:{cat.get('name', cat_code)}"
+        # 分类命中后做标题二次校验（粗筛 → 准入门）：
+        #   - title_exclude_any 命中 → 分类内噪音，直接丢弃
+        #   - title_include_any 已配置但标题都没命中 → 不算分类命中，落到关键词路径
+        cat_excl = cat.get("title_exclude_any") or []
+        cat_incl = cat.get("title_include_any") or []
+        if _contains_any(title, cat_excl):
+            return None
+        if cat_incl and _contains_any(title, cat_incl) is None:
+            pass  # 未过分类准入门，交给关键词路径兜底
+        else:
+            fts = cat.get("fact_types") or []
+            fact_type = fts[0] if fts else config.get("default_fact_type", "other_hard")
+            reason = f"category:{cat.get('name', cat_code)}"
 
     # 关键词路径（标题命中 include_any）
     if reason is None:
@@ -255,17 +281,22 @@ def classify(record: dict, config: dict) -> dict | None:
             ft_map = config.get("fact_type_by_keyword", {}) or {}
             fact_type = ft_map.get(hit, config.get("default_fact_type", "other_hard"))
             reason = f"keyword:{hit}"
+            # 组合规则：宽词缺伴随词 → 标记降级（仍保留为候选，但不当高确定性）
+            if not _combo_satisfied(title, hit, config.get("hard_delta_combo_rules")):
+                combo_demote = True
+                reason = f"{reason}|combo_miss"
 
     if reason is None:
         return None  # 不构成 L3 候选
 
-    # 3) 低确定性降级
+    # 3) 低确定性降级（标题低确定性词 或 组合规则未满足）
     low_hit = _contains_any(title, config.get("low_confidence_keywords", []) or [])
-    if low_hit:
+    if low_hit or combo_demote:
         update_type = "review_candidate"
         confidence = "low"
         fact_status = "planned"
-        reason = f"{reason}|low:{low_hit}"
+        if low_hit:
+            reason = f"{reason}|low:{low_hit}"
     else:
         update_type = "hard_delta"
         confidence = "high"
