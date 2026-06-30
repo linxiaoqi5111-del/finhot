@@ -171,6 +171,17 @@ class TestComboRules(unittest.TestCase):
         out = fc.classify(self._rec("关于收到中标通知书的公告"), self.cfg)
         self.assertEqual(out["update_type"], "hard_delta")
 
+    def test_prepublish_demoted(self):
+        # 预披露=未实施的减持计划：即使 减持+股份 组合满足，也因 low 词降级
+        cfg = dict(self.cfg)
+        cfg["l3_title_keywords"] = {"include_any": ["减持"], "exclude_any": []}
+        cfg["fact_type_by_keyword"] = {"减持": "share_change"}
+        cfg["hard_delta_combo_rules"] = {"减持": ["股份", "股东"]}
+        cfg["low_confidence_keywords"] = ["预披露"]
+        out = fc.classify(self._rec("关于股东减持股份预披露公告"), cfg)
+        self.assertEqual(out["update_type"], "review_candidate")
+        self.assertEqual(out["fact_status"], "planned")
+
 
 class TestDetailUrl(unittest.TestCase):
     def test_detail_url_has_stockcode_and_announcement_id(self):
@@ -224,6 +235,27 @@ class TestAtom(unittest.TestCase):
         self.assertNotIn("1782748800000", xml)
         # 特殊字符被正确转义
         self.assertIn("&amp;", xml)
+
+
+class TestWriteFeeds(unittest.TestCase):
+    def test_stale_renamed_feed_removed(self):
+        # 改名后 write_feeds 应清掉残留旧文件，避免订阅端静默读陈旧 feed
+        import tempfile
+
+        rec = {
+            "announcement_id": "1", "sec_code": "300001", "sec_name": "测试",
+            "title": "关于签订重大合同的公告", "published_at": "2026-06-30T08:00:00+08:00",
+            "pdf_url": "", "detail_url": "", "category_code": "",
+            "fact_type": "order_contract", "update_type": "hard_delta",
+            "confidence": "high", "l3_match_reason": "keyword:签订",
+        }
+        with tempfile.TemporaryDirectory() as d:
+            rss_dir = Path(d)
+            stale = rss_dir / "l3-hard-delta.xml"
+            stale.write_text("<old/>", encoding="utf-8")
+            emit_rss.write_feeds([rec], rss_dir, {"l3_categories": [], "watchlist_codes": []})
+            self.assertFalse(stale.exists())
+            self.assertTrue((rss_dir / "l3-candidates-hard-delta.xml").exists())
 
 
 if __name__ == "__main__":

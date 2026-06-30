@@ -76,6 +76,12 @@ def write_feeds(records: list[dict], rss_dir: Path, config: dict) -> dict:
     (rss_dir / "by-category").mkdir(parents=True, exist_ok=True)
     written: dict[str, int] = {}
 
+    # 0) 清理历史改名遗留的陈旧 feed：否则订阅端不会 404，而会「静默读旧数据」。
+    for stale in ("l3-hard-delta.xml",):
+        sp = rss_dir / stale
+        if sp.exists():
+            sp.unlink()
+
     # 1) 全市场 L3 候选 · 高确定性合集（仅 hard_delta）
     # 命名刻意叫「候选」而非「硬事实」：本 skill 只读标题+元数据、未解析正文，
     # 按 KB 口径只能产 L1_L3_candidate，不能误导为已验证的 L3 hard_fact。

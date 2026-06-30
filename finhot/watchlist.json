@@ -217,8 +217,8 @@
   ],
   "rss": [
     {
-      "name": "巨潮 L3 hard_delta",
-      "url": "http://localhost:8787/l3-hard-delta.xml"
+      "name": "巨潮 L3 候选 · 高确定性",
+      "url": "http://localhost:8787/l3-candidates-hard-delta.xml"
     }
   ]
 }

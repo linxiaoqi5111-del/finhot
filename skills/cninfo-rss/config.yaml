@@ -120,6 +120,9 @@ low_confidence_keywords:
   - 战略合作
   - 框架协议
   - 意向
+  # 预披露=尚未实施的减持/重组计划，属「planned」而非「realized」，强制降级
+  - 预披露
+  - 预案
 
 # ---- 关键词 → fact_type 映射（关键词路径用；分类路径用 l3_categories.fact_types）----
 fact_type_by_keyword:
