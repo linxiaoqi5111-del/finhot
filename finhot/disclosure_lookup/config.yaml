@@ -1,0 +1,42 @@
+# disclosure_lookup 配置（路径相对本文件所在目录解析）
+# 设计见 DESIGN.md。Phase 0：此配置为契约草案，load_config 在 Phase 1 实现。
+
+# ---- 缓存（cache-aside + TTL）----
+cache:
+  db_path: .cache/disclosure_cache.sqlite # SQLite 文件落点（已 gitignore）
+  ttl_days: 7 # 缓存有效期；过期视为 miss 重查。可调 30
+  empty_ttl_days: 1 # 负缓存：源返回空/瞬时失败时水位的短 TTL，避免空查询锁满 ttl_days
+
+# ---- 源开关 + 可信度 ----
+# enabled:false 不查；authority 进 triage 的 source_authority 维度。
+sources:
+  cninfo: { enabled: true, authority: 3 } # 巨潮公告（复用 fetch_cninfo，零依赖直连）
+  irm_szse: { enabled: true, authority: 2 } # 深交所互动易（akshare）
+  sse_einteract: { enabled: true, authority: 2 } # 上证 e 互动（akshare）
+  inquiry: { enabled: true, authority: 3 } # 交易所监管问询函（akshare）
+  hkex: { enabled: false, authority: 3 } # 港交所披露易（后置）
+  ir_site: { enabled: false, authority: 2 } # 公司官网 IR（后置）
+
+# ---- triage 打分器（6 维各 0-3 分；规则定级 + 分数排序）----
+triage:
+  weights: # 仅用于「同级内排序」的加权求和；分级靠下方硬门槛
+    source_authority: 1.0
+    fact_hardness: 2.0
+    company_relevance: 1.0
+    novelty: 1.0
+    lifecycle_impact: 2.0
+    market_relevance: 1.0
+  levels: # 硬门槛优先（自上而下首个命中即定级），未命中 → P3
+    P0: { fact_hardness_min: 3, lifecycle_impact_min: 2 } # 订单/量产/扩产/涨价/明确否认
+    P1: { fact_hardness_min: 2 } # 送样/收入占比/产品进展（需复核）
+    P2: { source_authority_min: 2 } # 官方但低硬度 → 仅缓存
+
+# ---- 复用 cninfo-rss 的关键词税法（fact_type / 组合规则 / 低确定性词）----
+reuse:
+  cninfo_rss_config: ../../skills/cninfo-rss/config.yaml
+  fetch_cninfo_dir: ../../skills/cninfo-rss/scripts # sys.path 注入后 import fetch_cninfo
+
+# ---- 证据卡落点（知识库 repo，同级 ../../../knowledge-base-private）----
+evidence_card:
+  kb_dir: ../../../knowledge-base-private/wiki/raw/disclosures
+  require_review: true # 必须人工/agent 确认后才落知识库

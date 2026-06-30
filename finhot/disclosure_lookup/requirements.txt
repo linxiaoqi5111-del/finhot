@@ -1,0 +1,6 @@
+# disclosure_lookup 依赖
+# 建议 venv 安装：系统 python3 可能未装 PyYAML；sse_einteract 在 LibreSSL 下不稳，
+# 推荐 OpenSSL≥1.1 的 Python（如 brew python@3.12）。详见 README「在另一台 Mac 上跑」。
+PyYAML>=6.0          # 读 config.yaml + 复用 cninfo-rss/config.yaml
+akshare>=1.12        # 互动易/问询函/sse 源（sources/irm.py、inquiry.py，方法内延迟 import）
+urllib3<2            # 钉 <2：规避 LibreSSL 下 TLS 握手问题；OpenSSL3.x 下也兼容
