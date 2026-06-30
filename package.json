@@ -76,7 +76,7 @@
     }
   },
   "simple-git-hooks": {
-    "pre-commit": "pnpm exec lint-staged"
+    "pre-commit": "node scripts/precommit.mjs"
   },
   "lint-staged": {
     "*": [

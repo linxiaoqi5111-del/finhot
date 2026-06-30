@@ -7,11 +7,16 @@
 - **学习重点**：RAG、Hybrid 检索（向量 + BM25 + rerank）等；实现时优先选能学到主流/前沿做法的方案并解释取舍。
 - **Git 约定**：开工先 `git status --short && git branch --show-current`；大任务必开分支（`<type>/<short-task>`），**合并 `main` 必须等我确认**，不强推；小文档修补可直接 `main`。
 - 🚫 **红线**：禁提交 `.env*` / 密钥 / `*.pdf|zip|duckdb|db` / `.DS_Store` / 缓存或虚拟环境；不写明文密钥；知识库大 JSON（relations/）走 `query_relations.py`，别直接 `cat`；不擅自合并 `main`、不强推。
-- 完整偏好见 `.agent-memory/30_conventions/preferences.md`（repo 内软链 → `/Users/a77/agent-memory`，已 gitignore）。
+- 完整偏好见 `.agent-memory/30_conventions/preferences.md`（`.agent-memory` 是指向本地 agent-memory clone 的软链，已 gitignore）。
 
 ## 🧠 共享记忆底座（开工前先读）
 
-本机有一个跨 Agent 共享的记忆底座（Obsidian vault）：`/Users/a77/agent-memory`（仓库 `linxiaoqi5111-del/agent-memory`）。
+本机有一个跨 Agent 共享的记忆底座（Obsidian vault），仓库 `linxiaoqi5111-del/agent-memory`。本仓通过 repo 内软链 `.agent-memory` 访问它（已 gitignore，需各机本地创建一次）：
+
+```bash
+# 先将 vault clone 到本地任意位置，再建软链（路径按你实际 clone 位置）
+ln -s ~/agent-memory .agent-memory
+```
 
 **开始任务前先读：**
 

@@ -16,7 +16,9 @@ export default async function handler(request: VercelRequest, response: VercelRe
   const rawBody = await getRawBody(request)
   const bodySignature = sha1(rawBody, INTEGRATION_SECRET)
 
-  if (bodySignature !== request.headers["x-vercel-signature"]) {
+  const provided = request.headers["x-vercel-signature"]
+  const providedSig = Array.isArray(provided) ? provided[0] : provided
+  if (typeof providedSig !== "string" || !timingSafeEqual(bodySignature, providedSig)) {
     return response.status(403).json({
       code: "invalid_signature",
       error: "signature didn't match",
@@ -44,6 +46,14 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
 function sha1(data: Buffer, secret: string): string {
   return crypto.createHmac("sha1", secret).update(data).digest("hex")
+}
+
+// Constant-time comparison so a mismatching signature can't be recovered via timing.
+function timingSafeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a)
+  const bufB = Buffer.from(b)
+  if (bufA.length !== bufB.length) return false
+  return crypto.timingSafeEqual(bufA, bufB)
 }
 
 export const config = {
