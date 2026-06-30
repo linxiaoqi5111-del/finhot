@@ -10,7 +10,7 @@
  */
 import { execFile, execFileSync } from "node:child_process"
 import crypto from "node:crypto"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import type { IncomingMessage, ServerResponse } from "node:http"
 
 import type { EntryQualityScoreRecord } from "@follow/shared/entry-quality-score"
@@ -543,6 +543,94 @@ async function autoImportWatchlistFeeds(categories?: WatchlistCategory[]): Promi
     }
   }
   return imported
+}
+
+// Reconcile the public cache with the current watchlist by dropping feeds whose
+// source has been removed from watchlist.json.
+//
+// `/api/public/refresh` re-imports the watchlist but is otherwise additive: a
+// source deleted from the watchlist keeps its previously-cached feed + entries,
+// so it silently "comes back" on the next public deploy (the regression that
+// resurrected old weibo accounts). This prunes those orphans.
+//
+// Only watchlist-managed feeds are considered, identified by their canonical
+// feed url:
+//   - finhot://weibo/<uid>      ← data.weibo
+//   - finhot://xueqiu/<id>      ← data.xueqiu
+//   - finhot://twitter/<handle> ← data.x (also produced by the Grok X importer;
+//                                 matched case-insensitively so native fetches
+//                                 for a still-subscribed handle are preserved)
+//   - http(s) feed url          ← data.wechat / data.rss (normalized exact match)
+// Any other feed (unknown scheme) is left untouched. An empty/unreadable
+// watchlist is treated as "unknown" and skips pruning, so a transient read
+// failure can never wipe the whole cache.
+function pruneStaleWatchlistFeeds(): number {
+  if (!cacheDir) return 0
+  if (process.env.FINHOT_DISABLE_WATCHLIST_PRUNE === "1") return 0
+  const data = loadWatchlist()
+  const total =
+    (data.weibo?.length ?? 0) +
+    (data.xueqiu?.length ?? 0) +
+    (data.x?.length ?? 0) +
+    (data.wechat?.length ?? 0) +
+    (data.rss?.length ?? 0)
+  if (total === 0) return 0
+
+  const weiboSet = new Set((data.weibo ?? []).map(String))
+  const xueqiuSet = new Set((data.xueqiu ?? []).map(String))
+  const xSet = new Set(
+    (data.x ?? []).filter((h): h is string => typeof h === "string").map((h) => h.toLowerCase()),
+  )
+  const httpSet = new Set<string>()
+  for (const item of data.wechat ?? []) {
+    if (typeof item === "object" && item.url?.trim()) httpSet.add(normalizeFeedUrl(item.url.trim()))
+  }
+  for (const item of data.rss ?? []) {
+    if (item?.url?.trim()) httpSet.add(normalizeFeedUrl(item.url.trim()))
+  }
+
+  const isKept = (url: string): boolean => {
+    const weibo = /^finhot:\/\/weibo\/(.+)$/.exec(url)
+    if (weibo) return weiboSet.has(weibo[1]!)
+    const xueqiu = /^finhot:\/\/xueqiu\/(.+)$/.exec(url)
+    if (xueqiu) return xueqiuSet.has(xueqiu[1]!)
+    const twitter = /^finhot:\/\/twitter\/(.+)$/.exec(url)
+    if (twitter) return xSet.has(twitter[1]!.toLowerCase())
+    if (/^https?:\/\//i.test(url)) return httpSet.has(url)
+    return true // unknown scheme — not watchlist-managed, leave untouched
+  }
+
+  const manifest = readManifest()
+  const enrichments = readEnrichments()
+  let removed = 0
+  let enrichmentsDirty = false
+  for (const [feedId, feed] of Object.entries(manifest.feeds)) {
+    if (isKept(feed.url)) continue
+    const entriesFile = join(cacheDir, "entries", `${feedId}.json`)
+    if (existsSync(entriesFile)) {
+      try {
+        const cached: CachedEntry[] = JSON.parse(readFileSync(entriesFile, "utf-8"))
+        for (const e of cached) {
+          if (enrichments[e.id]) {
+            delete enrichments[e.id]
+            enrichmentsDirty = true
+          }
+        }
+      } catch {
+        /* ignore unreadable entries file */
+      }
+      rmSync(entriesFile, { force: true })
+    }
+    delete manifest.feeds[feedId]
+    removed++
+    console.warn(`[FinHot] pruned stale watchlist feed: ${feed.title ?? feed.url} (${feed.url})`)
+  }
+  if (removed > 0) {
+    manifest.updatedAt = new Date().toISOString()
+    writeManifest(manifest)
+    if (enrichmentsDirty) writeEnrichments(enrichments)
+  }
+  return removed
 }
 
 function readEnrichments(): EnrichmentMap {
@@ -3873,6 +3961,9 @@ export function rssProxyPlugin(): PluginOption {
         try {
           const watchlist = await autoImportWatchlistFeeds()
           const grokX = await importGrokX()
+          // Prune after both importers run so still-subscribed feeds (incl. Grok
+          // native X) exist in the manifest and are never mistaken for orphans.
+          const pruned = pruneStaleWatchlistFeeds()
           const enrich = await enrichMissingEntries().catch(() => null)
           res.writeHead(200, {
             "Content-Type": "application/json",
@@ -3882,7 +3973,7 @@ export function rssProxyPlugin(): PluginOption {
             JSON.stringify({
               ok: true,
               imported: watchlist + grokX,
-              breakdown: { watchlist, grokX, enriched: enrich?.enriched ?? 0 },
+              breakdown: { watchlist, grokX, pruned, enriched: enrich?.enriched ?? 0 },
             }),
           )
         } catch (error: unknown) {
