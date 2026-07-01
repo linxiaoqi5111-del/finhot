@@ -12,6 +12,10 @@
   <img src="https://img.shields.io/badge/based_on-Focal_(Folo_fork)-orange" alt="base"/>
 </p>
 
+<p align="center">
+  <img src="./docs/screenshots/timeline.png" alt="FinHot 时间线界面" width="920"/>
+</p>
+
 ---
 
 ## 它是什么
@@ -23,6 +27,10 @@ FinHot 基于 [Focal](https://github.com/nextcaicai/Focal)（[Folo/RSSNext](http
 - 📝 **AI 摘要** — 自动为条目生成中文摘要（BYOK，使用你自己的 LLM key）
 - 🌐 **AI 中译** — 自动把英文/外文条目的标题与正文译成中文
 - 🖥️ **桌面 + 网页** — macOS/Windows/Linux 桌面应用，亦可部署为公网站点，本地优先
+
+<p align="center">
+  <img src="./docs/screenshots/entry-detail.png" alt="条目详情：原文 + AI 摘要" width="920"/>
+</p>
 
 ## 技术架构
 

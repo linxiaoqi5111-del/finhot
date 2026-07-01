@@ -12,6 +12,10 @@
   <img src="https://img.shields.io/badge/based_on-Focal_(Folo_fork)-orange" alt="base"/>
 </p>
 
+<p align="center">
+  <img src="./docs/screenshots/timeline.png" alt="FinHot timeline UI" width="920"/>
+</p>
+
 ---
 
 ## What it is
@@ -23,6 +27,10 @@ FinHot is built on [Focal](https://github.com/nextcaicai/Focal) (a fork of [Folo
 - 📝 **AI summaries** — auto-generates Chinese summaries per entry (BYOK, using your own LLM key)
 - 🌐 **AI translation** — auto-translates titles and bodies of English/foreign entries into Chinese
 - 🖥️ **Desktop + Web** — macOS/Windows/Linux desktop app, also deployable as a public site, local-first
+
+<p align="center">
+  <img src="./docs/screenshots/entry-detail.png" alt="Entry detail: original + AI summary" width="920"/>
+</p>
 
 ## Architecture
 
